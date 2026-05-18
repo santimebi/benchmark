@@ -11,7 +11,7 @@ def make_spiral_dataset(
     rotations=2.5,
     random_state=42,
     verbose=True,
-    plot_dataset=True,
+    plot_dataset=False,
 ):
     np.random.seed(random_state)
 
