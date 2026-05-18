@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from unittest.mock import patch
-from split_dataset import split_dataset, save_all_splits
+from 2_split_dataset import split_dataset, save_all_splits
 
 @pytest.fixture
 def dummy_spiral_csv(tmp_path):

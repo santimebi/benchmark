@@ -118,4 +118,4 @@ def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False
 
 if __name__ == "__main__":
     seeds_to_use = [0, 1, 2]
-    save_all_splits(DATASETS_PATH / "spiral.csv", DATASETS_PATH, seeds=seeds_to_use, overwrite_file=False, verbose=True, plot_dataset=False)
+    save_all_splits(DATASETS_PATH / "spiral.csv", DATASETS_PATH, seeds=seeds_to_use, overwrite_file=True, verbose=True, plot_dataset=True)
