@@ -1,6 +1,20 @@
+"""
+1_create_spiral.py
+───────────────────────────────────────────────
+Paso 1 del pipeline: Generación del dataset espiral.
+
+Genera un dataset sintético de espirales entrelazadas con N clases,
+donde cada clase describe una espiral con ruido controlado.
+El resultado se guarda como CSV en ``DATASETS_PATH/spiral.csv``.
+
+Uso:
+    python 1_create_spiral.py
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from utils.config import DATASETS_PATH
+
 
 def make_spiral_dataset(
     file_name=DATASETS_PATH / "spiral.csv",
@@ -13,6 +27,28 @@ def make_spiral_dataset(
     verbose=True,
     plot_dataset=False,
 ):
+    """
+    Genera un dataset sintético de espirales entrelazadas.
+
+    Cada clase genera ``n_points_per_class`` puntos a lo largo de una
+    espiral con desfase angular uniforme. El ruido gaussiano se aplica
+    sobre el ángulo para dificultar la separación.
+
+    Args:
+        file_name (Path): Ruta de salida del CSV.
+        overwrite_file (bool): Si es ``True``, sobreescribe el CSV existente.
+        n_points_per_class (int): Puntos por clase.
+        n_classes (int): Número de espirales / clases.
+        noise (float): Desviación estándar del ruido angular.
+        rotations (float): Número de rotaciones completas de cada espiral.
+        random_state (int): Semilla para reproducibilidad.
+        verbose (bool): Imprime mensajes de estado.
+        plot_dataset (bool): Muestra una visualización matplotlib.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: ``(X, y)`` donde ``X`` tiene forma
+            ``(n_points_per_class * n_classes, 2)`` e ``y`` las etiquetas.
+    """
     np.random.seed(random_state)
 
     X = []

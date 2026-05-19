@@ -1,7 +1,27 @@
+"""
+2_split_dataset.py
+───────────────────────────────────────────────
+Paso 2 del pipeline: Partición del dataset espiral.
+
+Divide el dataset en cuatro subconjuntos:
+  - **Retain**: datos de entrenamiento que el modelo debe recordar.
+  - **Forget**: datos (exclusivamente clase 0) que el modelo debe olvidar.
+  - **Validation**: datos para evaluar durante el entrenamiento.
+  - **Test**: datos reservados para la evaluación final.
+
+El forget set se construye seleccionando las muestras de la clase 0
+más cercanas al centro de la espiral (radio menor), lo que simula
+un escenario realista de machine unlearning.
+
+Uso:
+    python 2_split_dataset.py
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from utils.config import DATASETS_PATH
+
 
 def split_dataset(
             file_name=DATASETS_PATH / "spiral.csv",
@@ -12,6 +32,26 @@ def split_dataset(
             random_state=42,
             val_size=0.1,
             ):
+    """
+    Divide el dataset espiral en retain, forget, validation y test.
+
+    La estrategia de forget aísla muestras de la clase 0 ordenadas por
+    proximidad al origen (centro de la espiral), asegurando que el forget
+    set sea un subconjunto coherente y espacialmente localizado.
+
+    Args:
+        file_name (Path): Ruta al CSV generado por ``1_create_spiral.py``.
+        verbose (bool): Imprime estadísticas de los splits.
+        plot_dataset (bool): Muestra gráfico retain vs forget.
+        test_size (float): Proporción para el set de test.
+        forget_size (float): Proporción del train dedicada a forget.
+        random_state (int): Semilla para reproducibilidad.
+        val_size (float): Proporción del train_val dedicada a validación.
+
+    Returns:
+        tuple: ``(X_retain, X_forget, X_val, X_test,
+                  y_retain, y_forget, y_val, y_test)``
+    """
     # Cargamos el archivo. Tiene columnas x1, x2, label
     data = np.loadtxt(file_name, delimiter=",", skiprows=1)
     
@@ -86,8 +126,22 @@ def split_dataset(
 
     return X_retain, X_forget, X_val, X_test, y_retain, y_forget, y_val, y_test
 
+
 def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False, verbose=True, plot_dataset=False):
-    """Genera y guarda los splits del dataset en archivos .npz usando diferentes seeds."""
+    """
+    Genera y guarda los splits del dataset en archivos ``.npz`` para múltiples seeds.
+
+    Cada seed produce un fichero ``spiral_splits_seed_{seed}.npz`` que
+    contiene las 8 arrays del split (X/y para retain, forget, val, test).
+
+    Args:
+        file_name (Path): Ruta al CSV del dataset espiral.
+        output_dir (Path): Directorio de salida para los ``.npz``.
+        seeds (list[int]): Lista de semillas a generar.
+        overwrite_file (bool): Si es ``True``, regenera splits existentes.
+        verbose (bool): Imprime mensajes de estado.
+        plot_dataset (bool): Muestra gráfico por cada seed.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     
     for seed in seeds:
@@ -115,6 +169,7 @@ def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False
         else:
             if verbose:
                 print(f"\n--- El archivo {output_file.name} ya existe. Saltando generación (overwrite_file=False) ---")
+
 
 if __name__ == "__main__":
     seeds_to_use = [0, 1, 2]

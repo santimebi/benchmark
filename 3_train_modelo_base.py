@@ -1,3 +1,22 @@
+"""
+3_train_modelo_base.py
+───────────────────────────────────────────────
+Paso 3 del pipeline: Entrenamiento del modelo base.
+
+Entrena un modelo ``BaseMLP`` usando el conjunto completo de entrenamiento
+(Retain + Forget) para cada seed configurada. Si existe un fichero
+``models/best_hp.json`` generado por ``00_hp_search_optuna.py``, los
+hiperparámetros óptimos se cargan automáticamente; de lo contrario se
+usan valores por defecto.
+
+Los pesos del modelo entrenado se guardan en
+``models/weights/base_model_seed_{seed}.pth``.
+
+Uso:
+    python 3_train_modelo_base.py
+"""
+
+import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -7,7 +26,50 @@ from pathlib import Path
 from utils.config import DATASETS_PATH
 from models.base_nn import BaseMLP
 
-def train_base_model(seed: int = 0, epochs: int = 100, batch_size: int = 32, lr: float = 1e-3, verbose: bool = True):
+BEST_HP_PATH = Path("models/best_hp.json")
+
+
+def load_best_hp() -> dict:
+    """
+    Carga los mejores hiperparámetros desde el JSON generado por Optuna.
+
+    Returns:
+        dict: Diccionario con los hiperparámetros (``hidden_dim``, ``lr``,
+              ``batch_size``, ``epochs``). Diccionario vacío si el fichero
+              no existe.
+    """
+    if not BEST_HP_PATH.exists():
+        print(f"[WARN] No se encontró {BEST_HP_PATH}. Usando hiperparámetros por defecto.")
+        return {}
+    with open(BEST_HP_PATH, "r", encoding="utf-8") as f:
+        hp = json.load(f)
+    print(f"Hiperparámetros cargados desde {BEST_HP_PATH}: {hp}")
+    return hp
+
+
+def train_base_model(seed: int = 0, epochs: int = 100, batch_size: int = 32,
+                     lr: float = 1e-3, hidden_dim: int = 16, verbose: bool = True):
+    """
+    Entrena el modelo base (``BaseMLP``) sobre Retain + Forget.
+
+    Este modelo representa el modelo "original" que después será sometido
+    a técnicas de machine unlearning para eliminar la información del
+    forget set.
+
+    Args:
+        seed: Semilla del split a utilizar.
+        epochs: Número de épocas de entrenamiento.
+        batch_size: Tamaño de batch para el DataLoader.
+        lr: Learning rate del optimizador Adam.
+        hidden_dim: Número de neuronas de las capas ocultas del MLP.
+        verbose: Imprime métricas de entrenamiento cada 10 épocas.
+
+    Returns:
+        BaseMLP: Modelo entrenado.
+
+    Raises:
+        FileNotFoundError: Si el ``.npz`` del split no existe.
+    """
     # 1. Cargar datos del split específico
     data_path = DATASETS_PATH / f"spiral_splits_seed_{seed}.npz"
     if not data_path.exists():
@@ -35,7 +97,7 @@ def train_base_model(seed: int = 0, epochs: int = 100, batch_size: int = 32, lr:
     
     # 2. Instanciar el modelo
     # El dataset espiral tiene 2 características (x1, x2) y 3 clases (0, 1, 2)
-    model = BaseMLP(input_dim=2, hidden_dim=16, output_dim=3)
+    model = BaseMLP(input_dim=2, hidden_dim=hidden_dim, output_dim=3)
     
     # 3. Configurar optimizador y función de pérdida
     criterion = nn.CrossEntropyLoss()
@@ -90,9 +152,19 @@ def train_base_model(seed: int = 0, epochs: int = 100, batch_size: int = 32, lr:
     return model
 
 if __name__ == "__main__":
-    # Podemos entrenar los modelos base para todas las seeds generadas
+    # Cargar mejores hiperparámetros (o usar defaults si no existen)
+    best_hp = load_best_hp()
+
+    hp = {
+        "epochs": best_hp.get("epochs", 150),
+        "batch_size": best_hp.get("batch_size", 32),
+        "lr": best_hp.get("lr", 1e-3),
+        "hidden_dim": best_hp.get("hidden_dim", 16),
+    }
+
+    # Entrenar los modelos base para todas las seeds generadas
     seeds_to_train = [0, 1, 2]
-    
+
     for s in seeds_to_train:
-        train_base_model(seed=s, epochs=150, batch_size=32, lr=1e-3, verbose=True)
+        train_base_model(seed=s, verbose=True, **hp)
         print("-" * 50)
