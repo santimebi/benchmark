@@ -33,7 +33,7 @@ benchmark/
 ├── 1_create_spiral.py           ← Paso 1: Generar dataset
 ├── 2_split_dataset.py           ← Paso 2: Particionar dataset
 ├── 00_hp_search_optuna.py       ← Paso 2.5: Buscar hiperparámetros
-├── 3_train_modelo_base.py       ← Paso 3: Entrenar modelo base
+├── 3_train_model.py             ← Paso 3: Entrenar modelo (base, naive o personalizado)
 └── requirements.txt             ← Dependencias del proyecto
 ```
 
@@ -48,7 +48,7 @@ que son consumidos por los pasos posteriores.
 flowchart LR
     A["1_create_spiral.py"] --> B["2_split_dataset.py"]
     B --> C["00_hp_search_optuna.py"]
-    C --> D["3_train_modelo_base.py"]
+    C --> D["3_train_model.py"]
     
     A -. "spiral.csv" .-> B
     B -. "spiral_splits_seed_N.npz" .-> C
@@ -143,39 +143,45 @@ python 00_hp_search_optuna.py
 
 ---
 
-## Paso 3 — Entrenamiento del Modelo Base (`3_train_modelo_base.py`)
+## Paso 3 — Entrenamiento del Modelo (`3_train_model.py`)
 
 ### Propósito
-Entrena el modelo base (`BaseMLP`) usando el conjunto **completo** de
-entrenamiento (Retain + Forget). Este modelo representa el estado
-"original" antes de aplicar técnicas de unlearning.
+Entrena cualquier modelo configurando dinámicamente su arquitectura, protocolo de entrenamiento/olvido, conjunto de splits y parámetros de hiperparámetros. 
+
+Por defecto se entrena el modelo base original (`base_model_seed_{N}.pth`) con todos los datos (`retain` y `forget`), pero también permite entrenar el modelo ingenuo (`naive_model_seed_{N}.pth`) que excluye el split de `forget`.
+
+### Parámetros principales (CLI)
+| Parámetro | Valor por defecto | Descripción |
+|-----------|-------------------|-------------|
+| `--model_arch` | `models.base_nn.BaseMLP` | Import path de la clase del modelo a instanciar. |
+| `--protocol` | `standard` | Protocolo de entrenamiento o unlearning a ejecutar (ej. `standard`). |
+| `--train_splits` | `retain,forget` | Lista de splits separados por comas a incluir en el entrenamiento (ej. `retain` para naive). |
+| `--model_name` | `base` | Prefijo para nombrar el archivo de pesos resultante en `models/weights/`. |
+| `--hp_file` | `models/best_hp.json` | Ruta al archivo JSON de hiperparámetros generado por Optuna. |
+| `--epochs` | *(Desde `hp_file` o `150`)* | Sobrescribe el número de épocas de entrenamiento. |
+| `--batch_size` | *(Desde `hp_file` o `32`)* | Sobrescribe el tamaño de batch. |
+| `--lr` | *(Desde `hp_file` o `1e-3`)* | Sobrescribe el learning rate. |
+| `--hidden_dim` | *(Desde `hp_file` o `16`)* | Sobrescribe la dimensión oculta del modelo MLP. |
+| `--seeds` | `0,1,2` | Semillas para las cuales entrenar el modelo, separadas por comas (ej. `0,1,2`). |
 
 ### Carga de Hiperparámetros
-1. Si existe `models/best_hp.json` → se cargan los HP óptimos.
+1. Si existe la ruta del `--hp_file` (por defecto `models/best_hp.json`) → se cargan sus valores.
 2. Si no existe → se usan valores por defecto:
    - `hidden_dim=16`, `lr=1e-3`, `batch_size=32`, `epochs=150`
+3. Cualquier argumento específico `--epochs`, `--batch_size`, `--lr` o `--hidden_dim` indicado por consola sobrescribirá los valores anteriores.
 
-### Modelo
-**BaseMLP** — Red neuronal MLP con arquitectura:
-```
-input(2) → Linear(hidden_dim) → ReLU → Linear(hidden_dim) → ReLU → Linear(3)
-```
-
-El diseño separa `feature_extractor` y `classifier` para facilitar
-técnicas de unlearning que necesiten:
-- Acceder a representaciones intermedias.
-- Reiniciar solo la última capa.
-
-### Métricas reportadas (cada 10 epochs)
-- Train Loss / Train Accuracy
-- Validation Loss / Validation Accuracy
-
-### Salida
-- `models/weights/base_model_seed_{N}.pth` — State dict del modelo entrenado.
+### Salidas
+- `models/weights/{model_name}_model_seed_{N}.pth` — State dict del modelo entrenado.
 
 ### Ejecución
+Para entrenar el modelo original completo (modelo base):
 ```bash
-python 3_train_modelo_base.py
+python 3_train_model.py --model_name base --train_splits retain,forget
+```
+
+Para entrenar el modelo que nunca vio los datos a olvidar (modelo naive):
+```bash
+python 3_train_model.py --model_name naive --train_splits retain
 ```
 
 ---
@@ -282,8 +288,9 @@ python 2_split_dataset.py
 # 3. Buscar los mejores hiperparámetros (opcional pero recomendado)
 python 00_hp_search_optuna.py
 
-# 4. Entrenar el modelo base con los HP óptimos
-python 3_train_modelo_base.py
+# 4. Entrenar el modelo base y el modelo naive con los HP óptimos
+python 3_train_model.py --model_name base --train_splits retain,forget
+python 3_train_model.py --model_name naive --train_splits retain
 
 # 5. Ejecutar tests
 pytest tests/ -v

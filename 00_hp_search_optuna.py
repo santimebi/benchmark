@@ -2,12 +2,12 @@
 00_hp_search_optuna.py
 ─────────────────────────────────────────────────────────────
 Búsqueda de hiperparámetros con Optuna para el modelo base (BaseMLP).
-Se ejecuta ANTES de 3_train_modelo_base.py para determinar la
+Se ejecuta ANTES de 3_train_model.py para determinar la
 mejor combinación de: hidden_dim, learning_rate, batch_size y epochs.
 
 Los mejores hiperparámetros se guardan en
     models/best_hp.json
-para que 3_train_modelo_base.py pueda consumirlos directamente.
+para que 3_train_model.py pueda consumirlos directamente.
 """
 
 import json
