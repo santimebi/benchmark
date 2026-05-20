@@ -1,7 +1,7 @@
 """
 tests/test_metricas.py
 ───────────────────────────────────────────────
-Valida la carga de clases, evaluación de precisión, el cálculo de métricas relativas (RA, FA),
+Valida la carga de clases, evaluación de precisión, el cálculo de métricas relativas (RR, RF, RT),
 la tolerancia a la división por cero y la exportación de resultados JSON.
 """
 
@@ -134,7 +134,7 @@ def test_calculate_metrics_integration(tmp_path):
     _create_fake_npz(tmp_path, seed=0)
     _create_fake_npz(tmp_path, seed=1)
     
-    # 2. Crear pesos dummy para base, naive, y unlearned para ambas semillas
+    # 2. Crear pesos dummy y metadatos para base, naive, y unlearned para ambas semillas
     weights_dir = tmp_path / "models" / "weights"
     weights_dir.mkdir(parents=True, exist_ok=True)
     
@@ -143,6 +143,11 @@ def test_calculate_metrics_integration(tmp_path):
         for prefix in ["base", "naive", "cfk"]:
             model = BaseMLP(input_dim=2, hidden_dim=8, output_dim=3)
             torch.save(model.state_dict(), weights_dir / f"{prefix}_model_seed_{seed}.pth")
+            
+            # Guardar metadatos dummy
+            meta = {"epochs": 10, "time_elapsed": 1.5}
+            with open(weights_dir / f"{prefix}_model_seed_{seed}_meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
             
     # 3. Correr cálculo de métricas
     output_dir = tmp_path / "results"
@@ -153,7 +158,8 @@ def test_calculate_metrics_integration(tmp_path):
         model_arch="models.base_nn.BaseMLP",
         seeds=[0, 1],
         hp={"hidden_dim": 8},
-        output_dir=str(output_dir)
+        output_dir=str(output_dir),
+        weights_dir=str(weights_dir)
     )
     
     # 4. Aseverar estructura
@@ -164,16 +170,34 @@ def test_calculate_metrics_integration(tmp_path):
     
     # Verificar claves de salida en per_seed
     per_seed_0 = results["per_seed"]["0"]
-    assert "base" in per_seed_0
-    assert "naive" in per_seed_0
-    assert "unlearned" in per_seed_0
-    assert "RA" in per_seed_0
-    assert "FA" in per_seed_0
+    for key in ["base", "naive", "unlearned"]:
+        assert key in per_seed_0
+        assert "retain" in per_seed_0[key]
+        assert "forget" in per_seed_0[key]
+        assert "test" in per_seed_0[key]
+        assert "RR" in per_seed_0[key]
+        assert "RF" in per_seed_0[key]
+        assert "RT" in per_seed_0[key]
+        assert "epochs" in per_seed_0[key]
+        assert "time" in per_seed_0[key]
+        assert "TR" in per_seed_0[key]
+        
+    # El naive debe dar exactamente 1.0
+    assert per_seed_0["naive"]["RR"] == 1.0
+    assert per_seed_0["naive"]["RF"] == 1.0
+    assert per_seed_0["naive"]["RT"] == 1.0
+    assert per_seed_0["naive"]["TR"] == 1.0
+    
+    # Verificar valores cargados
+    assert per_seed_0["unlearned"]["epochs"] == 10
+    assert per_seed_0["unlearned"]["time"] == 1.5
+    assert per_seed_0["unlearned"]["TR"] == 1.0
     
     # Verificar agregaciones
-    assert "RA" in results["aggregated"]
-    assert "mean" in results["aggregated"]["RA"]
-    assert "std" in results["aggregated"]["RA"]
+    assert "unlearned_RR" in results["aggregated"]
+    assert "mean" in results["aggregated"]["unlearned_RR"]
+    assert "std" in results["aggregated"]["unlearned_RR"]
+    assert "unlearned_TR" in results["aggregated"]
     
     # Verificar que el JSON se guardó correctamente
     json_file = output_dir / "cfk_metrics.json"
@@ -200,8 +224,8 @@ class FlexibleModel(nn.Module):
 
 def test_calculate_metrics_zero_division_protection(tmp_path):
     """
-    Verifica que si la precisión del modelo Naive es 0.0,
-    el cálculo de RA y FA no cause un error de ejecución.
+    Verifica que si la precisión del modelo Naive o su tiempo es 0.0,
+    el cálculo de ratios no cause un error de ejecución y maneje floats correctamente.
     """
     # 1. Crear datasets para semilla 0
     _create_fake_npz(tmp_path, seed=0, constant_labels=1) # Todas las etiquetas son clase 1
@@ -221,6 +245,14 @@ def test_calculate_metrics_zero_division_protection(tmp_path):
     torch.save(model_bad.state_dict(), weights_dir / "naive_model_seed_0.pth")
     torch.save(model_good.state_dict(), weights_dir / "cfk_model_seed_0.pth")
     
+    # Guardar metadatos con naive time = 0.0
+    with open(weights_dir / "base_model_seed_0_meta.json", "w", encoding="utf-8") as f:
+        json.dump({"epochs": 20, "time_elapsed": 2.0}, f)
+    with open(weights_dir / "naive_model_seed_0_meta.json", "w", encoding="utf-8") as f:
+        json.dump({"epochs": 20, "time_elapsed": 0.0}, f)
+    with open(weights_dir / "cfk_model_seed_0_meta.json", "w", encoding="utf-8") as f:
+        json.dump({"epochs": 20, "time_elapsed": 3.0}, f)
+    
     # 3. Correr métricas
     output_dir = tmp_path / "results"
     results = metricas_module.calculate_metrics(
@@ -230,10 +262,14 @@ def test_calculate_metrics_zero_division_protection(tmp_path):
         model_arch="tests.test_metricas.FlexibleModel",
         seeds=[0],
         hp={"hidden_dim": 8},
-        output_dir=str(output_dir)
+        output_dir=str(output_dir),
+        weights_dir=str(weights_dir)
     )
     
-    # Naive retain acc es 0, cfk es 1.0. RA debe manejarse con seguridad.
+    # Naive retain acc es 0, cfk es 1.0. RR debe ser float("inf").
     assert results["per_seed"]["0"]["naive"]["retain"] == 0.0
     assert results["per_seed"]["0"]["unlearned"]["retain"] == 1.0
-    assert results["per_seed"]["0"]["RA"] == float("inf")
+    assert results["per_seed"]["0"]["unlearned"]["RR"] == float("inf")
+    
+    # Naive time es 0.0, cfk time es 3.0. TR debe ser float("inf").
+    assert results["per_seed"]["0"]["unlearned"]["TR"] == float("inf")

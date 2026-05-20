@@ -18,6 +18,7 @@ import argparse
 import json
 import inspect
 import importlib
+import time
 from pathlib import Path
 import numpy as np
 import torch
@@ -193,6 +194,7 @@ def train_model(
     if "hp" in protocol_sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in protocol_sig.parameters.values()):
         kwargs["hp"] = hp
         
+    start_time = time.perf_counter()
     model = protocol_fn(
         model=model,
         train_loader=train_loader,
@@ -204,15 +206,25 @@ def train_model(
         verbose=verbose,
         **kwargs
     )
+    elapsed_time = time.perf_counter() - start_time
     
-    # 5. Guardar el modelo
+    # 5. Guardar el modelo y sus metadatos
     weights_dir = Path("models/weights")
     weights_dir.mkdir(parents=True, exist_ok=True)
     model_path = weights_dir / f"{model_name}_model_seed_{seed}.pth"
     torch.save(model.state_dict(), model_path)
     
+    meta_path = weights_dir / f"{model_name}_model_seed_{seed}_meta.json"
+    meta_data = {
+        "epochs": epochs,
+        "time_elapsed": elapsed_time
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta_data, f, indent=2, ensure_ascii=False)
+    
     if verbose:
         print(f"Modelo guardado exitosamente en: {model_path}")
+        print(f"Metadatos guardados exitosamente en: {meta_path} (Tiempo: {elapsed_time:.4f}s)")
         
     return model
 
