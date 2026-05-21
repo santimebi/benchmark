@@ -106,7 +106,8 @@ def train_model(
     model_name: str = "base",
     hp: dict = None,
     verbose: bool = True,
-    pretrained_weights: str = None
+    pretrained_weights: str = None,
+    dataset: str = "spiral"
 ) -> nn.Module:
     """
     Entrena un modelo configurable sobre los splits indicados con un protocolo dado.
@@ -120,6 +121,7 @@ def train_model(
         hp: Diccionario de hiperparámetros opcionales.
         verbose: Si es True, imprime progreso de entrenamiento.
         pretrained_weights: Ruta a los pesos pre-entrenados del modelo (puede usar {seed}).
+        dataset: Nombre o prefijo del dataset a cargar.
 
     Returns:
         nn.Module: Modelo entrenado.
@@ -133,7 +135,7 @@ def train_model(
     hidden_dim = hp.get("hidden_dim", 16)
     
     # 1. Cargar datos del split específico
-    data_path = DATASETS_PATH / f"spiral_splits_seed_{seed}.npz"
+    data_path = DATASETS_PATH / f"{dataset}_splits_seed_{seed}.npz"
     X_train, y_train, X_val, y_val = load_dataset_splits(data_path, train_splits)
     
     # Convertir a tensores
@@ -153,13 +155,41 @@ def train_model(
     # 2. Instanciar el modelo
     model_class = load_class(model_arch)
     
-    # El dataset espiral tiene 2 características (x1, x2) y 3 clases (0, 1, 2)
-    # Inspeccionamos la firma del constructor para ver si acepta 'hidden_dim'
+    # Determinar input_dim y output_dim dinámicamente de los datos cargados
+    num_features = X_train.shape[1] if len(X_train.shape) == 2 else int(np.prod(X_train.shape[1:]))
+    all_y = np.concatenate([y_train, y_val])
+    num_classes = int(np.max(all_y) + 1)
+
     sig = inspect.signature(model_class.__init__)
+    model_kwargs = {}
+    
+    # Mapeo de nombres comunes para la entrada
+    if "input_dim" in sig.parameters:
+        model_kwargs["input_dim"] = num_features
+    elif "in_dim" in sig.parameters:
+        model_kwargs["in_dim"] = num_features
+    elif "in_features" in sig.parameters:
+        model_kwargs["in_features"] = num_features
+    elif "in_channels" in sig.parameters:
+        model_kwargs["in_channels"] = X_train.shape[1]
+        
+    # Mapeo de nombres comunes para la dimensión oculta
     if "hidden_dim" in sig.parameters:
-        model = model_class(input_dim=2, hidden_dim=hidden_dim, output_dim=3)
-    else:
-        model = model_class(input_dim=2, output_dim=3)
+        model_kwargs["hidden_dim"] = hidden_dim
+        
+    # Mapeo de nombres comunes para la salida (clases)
+    if "output_dim" in sig.parameters:
+        model_kwargs["output_dim"] = num_classes
+    elif "out_dim" in sig.parameters:
+        model_kwargs["out_dim"] = num_classes
+    elif "num_classes" in sig.parameters:
+        model_kwargs["num_classes"] = num_classes
+
+    # Para otros kwargs que el constructor pueda aceptar (ej. pretrained)
+    if "pretrained" in sig.parameters and "pretrained" in hp:
+        model_kwargs["pretrained"] = hp["pretrained"]
+        
+    model = model_class(**model_kwargs)
         
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
@@ -251,6 +281,8 @@ if __name__ == "__main__":
                         help="Ruta a los pesos pre-entrenados del modelo (puede usar {seed} para formatear dinámicamente)")
     parser.add_argument("--k", type=int, default=1,
                         help="Número de últimas capas a descongelar para el protocolo cfk")
+    parser.add_argument("--dataset", type=str, default="spiral",
+                        help="Nombre o prefijo del dataset a cargar (ej. spiral, cifar10)")
     parser.add_argument("--no_verbose", dest="verbose", action="store_false", 
                         help="Desactiva los mensajes y logs de progreso")
     parser.set_defaults(verbose=True)
@@ -283,7 +315,8 @@ if __name__ == "__main__":
             model_name=args.model_name,
             hp=hp,
             verbose=args.verbose,
-            pretrained_weights=args.pretrained_weights
+            pretrained_weights=args.pretrained_weights,
+            dataset=args.dataset
         )
         if args.verbose:
             print("-" * 50)

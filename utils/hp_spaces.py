@@ -11,8 +11,8 @@ import optuna
 
 HP_SPACES: Dict[str, Dict[str, Any]] = {
     "standard": {
-        "suggest_fn": lambda trial: {
-            "hidden_dim": trial.suggest_categorical("hidden_dim", [8, 16, 32, 64]),
+        "suggest_fn": lambda trial, model_arch="": {
+            "hidden_dim": trial.suggest_categorical("hidden_dim", [8, 16, 32, 64]) if "resnet" not in str(model_arch).lower() else 512,
             "lr": trial.suggest_float("lr", 1e-4, 1e-1, log=True),
             "batch_size": trial.suggest_categorical("batch_size", [16, 32, 64]),
             "epochs": trial.suggest_int("epochs", 50, 300, step=50),
@@ -21,12 +21,21 @@ HP_SPACES: Dict[str, Dict[str, Any]] = {
         "output_path": Path("models/best_hp.json"),
     },
     "cfk": {
-        "suggest_fn": lambda trial: {
+        "suggest_fn": lambda trial, model_arch="": {
             "lr": trial.suggest_float("lr", 1e-5, 1e-1, log=True),
-            "k": trial.suggest_int("k", 1, 3),
+            "k": trial.suggest_categorical("k", [1, 5, 9, 13, 17, 18]) if "resnet" in str(model_arch).lower() else trial.suggest_int("k", 1, 3),
             "epochs": 20,  # Fijo a 20 épocas para el desaprendizaje
         },
         "objective_type": "unlearning_loss",
         "output_path": Path("models/best_cfk_hp.json"),
+    },
+    "euk": {
+        "suggest_fn": lambda trial, model_arch="": {
+            "lr": trial.suggest_float("lr", 1e-5, 1e-1, log=True),
+            "k": trial.suggest_categorical("k", [1, 5, 9, 13, 17, 18]) if "resnet" in str(model_arch).lower() else trial.suggest_int("k", 1, 3),
+            "epochs": 20,  # Fijo a 20 épocas para el desaprendizaje
+        },
+        "objective_type": "unlearning_loss",
+        "output_path": Path("models/best_euk_hp.json"),
     }
 }

@@ -49,7 +49,7 @@ def load_best_hp(hp_file_path: Path) -> dict:
         return json.load(f)
 
 
-def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) -> float:
+def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, dataset: str = "spiral") -> float:
     """
     Función objetivo a minimizar por Optuna.
     """
@@ -57,7 +57,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) ->
         raise ValueError(f"Protocolo '{protocol}' no configurado en HP_SPACES.")
         
     hp_config = HP_SPACES[protocol]
-    suggested_hp = hp_config["suggest_fn"](trial)
+    suggested_hp = hp_config["suggest_fn"](trial, model_arch=model_arch)
     objective_type = hp_config["objective_type"]
     
     if objective_type == "val_loss":
@@ -69,7 +69,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) ->
         batch_size = suggested_hp.get("batch_size", 32)
         epochs = suggested_hp.get("epochs", 150)
         
-        data_path = DATASETS_PATH / f"spiral_splits_seed_{seed}.npz"
+        data_path = DATASETS_PATH / f"{dataset}_splits_seed_{seed}.npz"
         if not data_path.exists():
             raise FileNotFoundError(f"No se encontró el archivo de datos {data_path}. Ejecuta 2_split_dataset.py primero.")
             
@@ -88,11 +88,31 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) ->
         val_loader = DataLoader(TensorDataset(X_val_t, y_val_t), batch_size=batch_size, shuffle=False)
         
         model_class = load_class(model_arch)
+        num_features = X_train.shape[1] if len(X_train.shape) == 2 else int(np.prod(X_train.shape[1:]))
+        num_classes = int(np.max(np.concatenate([y_train, y_val])) + 1)
+        
         sig = inspect.signature(model_class.__init__)
+        model_kwargs = {}
+        if "input_dim" in sig.parameters:
+            model_kwargs["input_dim"] = num_features
+        elif "in_dim" in sig.parameters:
+            model_kwargs["in_dim"] = num_features
+        elif "in_features" in sig.parameters:
+            model_kwargs["in_features"] = num_features
+        elif "in_channels" in sig.parameters:
+            model_kwargs["in_channels"] = X_train.shape[1]
+            
         if "hidden_dim" in sig.parameters:
-            model = model_class(input_dim=2, hidden_dim=hidden_dim, output_dim=3)
-        else:
-            model = model_class(input_dim=2, output_dim=3)
+            model_kwargs["hidden_dim"] = hidden_dim
+            
+        if "output_dim" in sig.parameters:
+            model_kwargs["output_dim"] = num_classes
+        elif "out_dim" in sig.parameters:
+            model_kwargs["out_dim"] = num_classes
+        elif "num_classes" in sig.parameters:
+            model_kwargs["num_classes"] = num_classes
+            
+        model = model_class(**model_kwargs)
             
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
@@ -136,7 +156,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) ->
         base_batch_size = best_base_hp.get("batch_size", 16)
         
         # Cargar datos de retain y forget
-        data_path = DATASETS_PATH / f"spiral_splits_seed_{seed}.npz"
+        data_path = DATASETS_PATH / f"{dataset}_splits_seed_{seed}.npz"
         if not data_path.exists():
             raise FileNotFoundError(f"No se encontró el archivo de datos {data_path}. Ejecuta 2_split_dataset.py primero.")
             
@@ -167,13 +187,37 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) ->
             )
             
         # Instanciar modelos y cargar state_dict
+        num_features = X_retain.shape[1] if len(X_retain.shape) == 2 else int(np.prod(X_retain.shape[1:]))
+        X_val = data["X_val"] if "X_val" in data else X_retain
+        y_val = data["y_val"] if "y_val" in data else y_retain
+        num_classes = int(np.max(np.concatenate([y_retain, y_forget, y_val])) + 1)
+        
         sig = inspect.signature(model_class.__init__)
-        if "hidden_dim" in sig.parameters:
-            naive_model = model_class(input_dim=2, hidden_dim=hidden_dim, output_dim=3).to(device)
-            base_model = model_class(input_dim=2, hidden_dim=hidden_dim, output_dim=3).to(device)
-        else:
-            naive_model = model_class(input_dim=2, output_dim=3).to(device)
-            base_model = model_class(input_dim=2, output_dim=3).to(device)
+        
+        def instantiate_model():
+            model_kwargs = {}
+            if "input_dim" in sig.parameters:
+                model_kwargs["input_dim"] = num_features
+            elif "in_dim" in sig.parameters:
+                model_kwargs["in_dim"] = num_features
+            elif "in_features" in sig.parameters:
+                model_kwargs["in_features"] = num_features
+            elif "in_channels" in sig.parameters:
+                model_kwargs["in_channels"] = X_retain.shape[1]
+                
+            if "hidden_dim" in sig.parameters:
+                model_kwargs["hidden_dim"] = hidden_dim
+                
+            if "output_dim" in sig.parameters:
+                model_kwargs["output_dim"] = num_classes
+            elif "out_dim" in sig.parameters:
+                model_kwargs["out_dim"] = num_classes
+            elif "num_classes" in sig.parameters:
+                model_kwargs["num_classes"] = num_classes
+            return model_class(**model_kwargs).to(device)
+            
+        naive_model = instantiate_model()
+        base_model = instantiate_model()
             
         naive_model.load_state_dict(torch.load(naive_weights_path, map_location=device))
         base_model.load_state_dict(torch.load(base_weights_path, map_location=device))
@@ -233,7 +277,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str) ->
         raise ValueError(f"Tipo de objetivo '{objective_type}' no soportado.")
 
 
-def run_search(protocol: str, n_trials: int, seed: int, model_arch: str):
+def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset: str = "spiral"):
     """
     Crea el estudio Optuna, ejecuta la optimización y guarda los resultados en JSON.
     """
@@ -245,7 +289,7 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str):
     
     print("\n" + "=" * 80)
     print(f" INICIANDO BÚSQUEDA DE HIPERPARÁMETROS CON OPTUNA ")
-    print(f" Protocolo: {protocol} | Dirección: Minimizar | Trials: {n_trials} | Semilla: {seed}")
+    print(f" Protocolo: {protocol} | Dirección: Minimizar | Trials: {n_trials} | Semilla: {seed} | Dataset: {dataset}")
     print("=" * 80 + "\n")
     
     # Crear un estudio Optuna
@@ -256,7 +300,7 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str):
     )
     
     study.optimize(
-        lambda trial: objective(trial, protocol, seed, model_arch),
+        lambda trial: objective(trial, protocol, seed, model_arch, dataset),
         n_trials=n_trials,
         show_progress_bar=True
     )
@@ -273,7 +317,7 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str):
     # Añadir valores implícitos de configuración si los hay
     # (Por ejemplo, en CFK epochs es fijo a 20 y usa el hidden_dim de la base)
     suggested_params = dict(best.params)
-    if protocol == "cfk":
+    if protocol in ["cfk", "euk"]:
         suggested_params["epochs"] = 20
         best_base_hp = load_best_hp(Path("models/best_hp.json"))
         suggested_params["hidden_dim"] = best_base_hp.get("hidden_dim", 64)
@@ -291,7 +335,7 @@ if __name__ == "__main__":
         "--protocol",
         type=str,
         default="standard",
-        choices=["standard", "cfk"],
+        choices=["standard", "cfk", "euk"],
         help="Nombre del protocolo a buscar en HP_SPACES (default: standard)."
     )
     parser.add_argument(
@@ -312,11 +356,18 @@ if __name__ == "__main__":
         default="models.base_nn.BaseMLP",
         help="Importación de la clase del modelo (default: models.base_nn.BaseMLP)."
     )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="spiral",
+        help="Nombre o prefijo del dataset (default: spiral)."
+    )
     args = parser.parse_args()
     
     run_search(
         protocol=args.protocol,
         n_trials=args.n_trials,
         seed=args.seed,
-        model_arch=args.model_arch
+        model_arch=args.model_arch,
+        dataset=args.dataset
     )

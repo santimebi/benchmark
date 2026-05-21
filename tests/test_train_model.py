@@ -216,6 +216,49 @@ class TestTrainModel_Execution:
                 changed = True
         assert changed, "Los pesos del clasificador debieron cambiar durante el entrenamiento CFK"
 
+    def test_train_euk_unlearning_freezes_and_zeros_correct_layers(self, fake_dataset, weights_dir):
+        """El protocolo EUK con k=1 debe congelar el feature_extractor (manteniendo pesos) e inicializar a 0 el classifier."""
+        hp_base = {"epochs": 2, "batch_size": 16, "lr": 0.1, "hidden_dim": 8}
+        
+        # 1. Entrenamos un modelo base primero para guardar unos pesos iniciales
+        model_base = train_module.train_model(
+            model_arch="models.base_nn.BaseMLP",
+            protocol="standard",
+            train_splits=["retain", "forget"],
+            seed=0,
+            model_name="base_for_euk",
+            hp=hp_base,
+            verbose=False
+        )
+        base_weights_path = weights_dir / "base_for_euk_model_seed_0.pth"
+        assert base_weights_path.exists()
+        
+        # Guardamos copias de los pesos iniciales del feature_extractor y classifier
+        init_fe_weights = {name: param.clone() for name, param in model_base.feature_extractor.named_parameters()}
+        
+        # 2. Corremos EUK partiendo de los pesos del modelo base con epochs=0 para que no actualice los pesos tras ponerlos a 0
+        hp_euk = {"epochs": 0, "batch_size": 16, "lr": 0.1, "hidden_dim": 8, "k": 1}
+        model_euk = train_module.train_model(
+            model_arch="models.base_nn.BaseMLP",
+            protocol="euk",
+            train_splits=["retain"],
+            seed=0,
+            model_name="euk",
+            hp=hp_euk,
+            verbose=False,
+            pretrained_weights=str(base_weights_path)
+        )
+        
+        # 3. Comprobamos que los pesos del feature_extractor no cambiaron en absoluto
+        for name, param in model_euk.feature_extractor.named_parameters():
+            assert param.requires_grad is False
+            assert torch.equal(param, init_fe_weights[name])
+            
+        # 4. Comprobamos que los pesos de classifier se inicializaron a 0 y están activos
+        for name, param in model_euk.classifier.named_parameters():
+            assert param.requires_grad is True
+            assert torch.all(param == 0.0), f"{name} should be zeroed out in EUK"
+
     def test_train_pretrained_weights_not_found(self, fake_dataset):
         """Debe fallar con FileNotFoundError si el archivo de pesos no existe."""
         hp = {"epochs": 1, "batch_size": 16, "lr": 1e-3, "hidden_dim": 8}
@@ -360,5 +403,104 @@ class TestTrainModel_Execution:
         assert kwargs["model_name"] == "cfk_cli"
         assert kwargs["pretrained_weights"] == str(base_weights_path)
         assert kwargs["hp"]["k"] == 1
+
+
+def test_resnet_training_option_b_unfreezing(tmp_path, weights_dir):
+    """
+    Test training of ResNet18 model on a synthetic multi-dimensional dataset (e.g. images)
+    and check that Option B block freezing works as expected.
+    """
+    # 1. Create a synthetic image-like dataset splits file (4D X shape, i.e. N x C x H x W)
+    rng = np.random.default_rng(42)
+    y_retain = rng.integers(0, 5, 20)
+    y_retain[:5] = np.arange(5)
+    y_forget = rng.integers(0, 5, 10)
+    y_forget[:5] = np.arange(5)
+    y_val = rng.integers(0, 5, 10)
+    y_val[:5] = np.arange(5)
+    y_test = rng.integers(0, 5, 10)
+    y_test[:5] = np.arange(5)
+    
+    np.savez(
+        tmp_path / "cifar10_fake_splits_seed_0.npz",
+        X_retain=rng.standard_normal((20, 3, 8, 8)).astype(np.float32),
+        y_retain=y_retain,
+        X_forget=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_forget=y_forget,
+        X_val=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_val=y_val,
+        X_test=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_test=y_test,
+    )
+
+    # 2. First train base model to have pre-trained weights
+    hp_base = {"epochs": 2, "batch_size": 4, "lr": 1e-3}
+    model_base = train_module.train_model(
+        model_arch="models.resnet.ResNet18",
+        protocol="standard",
+        train_splits=["retain", "forget"],
+        seed=0,
+        model_name="base_resnet",
+        hp=hp_base,
+        verbose=False,
+        dataset="cifar10_fake"
+    )
+    assert model_base is not None
+    # Check that in_channels and classes were mapped dynamically
+    assert model_base.model.conv1.in_channels == 3
+    assert model_base.model.fc.out_features == 5
+
+    # 3. Now run CFK unlearning on the base model weights with Option B blocks
+    # Save the base weights path
+    base_weights_path = weights_dir / "base_resnet_model_seed_0.pth"
+    assert base_weights_path.exists()
+
+    # We want to test different k values and check which layers are unfrozen (requires_grad = True)
+    # k = 5: fc + layer4 should be unfrozen
+    hp_cfk = {"epochs": 1, "batch_size": 4, "lr": 1e-3, "k": 5}
+    model_cfk = train_module.train_model(
+        model_arch="models.resnet.ResNet18",
+        protocol="cfk",
+        train_splits=["retain"],
+        seed=0,
+        model_name="cfk_resnet",
+        hp=hp_cfk,
+        verbose=False,
+        pretrained_weights=str(weights_dir / "base_resnet_model_seed_{seed}.pth"),
+        dataset="cifar10_fake"
+    )
+    
+    # Check parameters requires_grad
+    for name, param in model_cfk.named_parameters():
+        if "fc" in name or "layer4" in name:
+            assert param.requires_grad is True, f"{name} should be unfrozen"
+        else:
+            assert param.requires_grad is False, f"{name} should be frozen"
+
+    # 4. Now run EUK unlearning on the base model weights with Option B blocks
+    # k = 5: fc + layer4 should be unfrozen and zeroed out
+    hp_euk = {"epochs": 0, "batch_size": 4, "lr": 1e-3, "k": 5}
+    model_euk = train_module.train_model(
+        model_arch="models.resnet.ResNet18",
+        protocol="euk",
+        train_splits=["retain"],
+        seed=0,
+        model_name="euk_resnet",
+        hp=hp_euk,
+        verbose=False,
+        pretrained_weights=str(weights_dir / "base_resnet_model_seed_{seed}.pth"),
+        dataset="cifar10_fake"
+    )
+
+    # Check parameters requires_grad and zero initialization
+    for name, param in model_euk.named_parameters():
+        if "fc" in name or "layer4" in name:
+            assert param.requires_grad is True, f"{name} should be unfrozen"
+            assert torch.all(param == 0.0), f"{name} weights should be zeroed out in EUK"
+        else:
+            assert param.requires_grad is False, f"{name} should be frozen"
+            assert not torch.all(param == 0.0), f"{name} weights should not be zeroed out in EUK"
+
+
 
 

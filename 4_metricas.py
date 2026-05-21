@@ -79,7 +79,8 @@ def calculate_metrics(
     seeds: list[int] = [0, 1, 2],
     hp: dict = None,
     output_dir: str = "results",
-    weights_dir: str = "models/weights"
+    weights_dir: str = "models/weights",
+    dataset: str = "spiral"
 ) -> dict:
     """
     Calcula y reporta la precisión absoluta y los ratios relacionales (RR, RF, RT, TR) por semilla.
@@ -119,7 +120,7 @@ def calculate_metrics(
     
     for seed in seeds:
         # Cargar datos
-        data_path = DATASETS_PATH / f"spiral_splits_seed_{seed}.npz"
+        data_path = DATASETS_PATH / f"{dataset}_splits_seed_{seed}.npz"
         if not data_path.exists():
             raise FileNotFoundError(f"No se encontró el split para semilla {seed} en {data_path}")
         
@@ -128,16 +129,41 @@ def calculate_metrics(
         X_forget, y_forget = data["X_forget"], data["y_forget"]
         X_test, y_test = data["X_test"], data["y_test"]
         
+        # Determinar dimensiones dinámicamente
+        num_features = X_retain.shape[1] if len(X_retain.shape) == 2 else int(np.prod(X_retain.shape[1:]))
+        all_y = np.concatenate([y_retain, y_forget, y_test])
+        num_classes = int(np.max(all_y) + 1)
+        
         # Cargar Modelos y metadatos
         models = {}
         metadata_vals = {}
         for name, key in [(base_name, "base"), (naive_name, "naive"), (unlearned_name, "unlearned")]:
             # Instanciar arquitectura
             sig = inspect.signature(model_class.__init__)
+            model_kwargs = {}
+            if "input_dim" in sig.parameters:
+                model_kwargs["input_dim"] = num_features
+            elif "in_dim" in sig.parameters:
+                model_kwargs["in_dim"] = num_features
+            elif "in_features" in sig.parameters:
+                model_kwargs["in_features"] = num_features
+            elif "in_channels" in sig.parameters:
+                model_kwargs["in_channels"] = X_retain.shape[1]
+                
             if "hidden_dim" in sig.parameters:
-                m = model_class(input_dim=2, hidden_dim=hidden_dim, output_dim=3)
-            else:
-                m = model_class(input_dim=2, output_dim=3)
+                model_kwargs["hidden_dim"] = hidden_dim
+                
+            if "output_dim" in sig.parameters:
+                model_kwargs["output_dim"] = num_classes
+            elif "out_dim" in sig.parameters:
+                model_kwargs["out_dim"] = num_classes
+            elif "num_classes" in sig.parameters:
+                model_kwargs["num_classes"] = num_classes
+                
+            if "pretrained" in sig.parameters and "pretrained" in hp:
+                model_kwargs["pretrained"] = hp["pretrained"]
+                
+            m = model_class(**model_kwargs)
             
             m = m.to(device)
             
@@ -352,8 +378,8 @@ if __name__ == "__main__":
                         help="Dimensión oculta del modelo (sobrascribe hp_file)")
     parser.add_argument("--weights_dir", type=str, default="models/weights",
                         help="Directorio donde se encuentran los pesos y metadatos de los modelos")
-    parser.add_argument("--output_dir", type=str, default="results",
-                        help="Directorio de guardado para el JSON final")
+    parser.add_argument("--dataset", type=str, default="spiral",
+                        help="Nombre o prefijo del dataset (default: spiral)")
                         
     args = parser.parse_args()
     
@@ -374,5 +400,6 @@ if __name__ == "__main__":
         seeds=seeds_list,
         hp=hp,
         output_dir=args.output_dir,
-        weights_dir=args.weights_dir
+        weights_dir=args.weights_dir,
+        dataset=args.dataset
     )

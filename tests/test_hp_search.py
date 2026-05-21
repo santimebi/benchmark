@@ -32,6 +32,7 @@ def _patch_config(tmp_path, monkeypatch):
     # Redirigir output_path en HP_SPACES a directorios temporales
     monkeypatch.setitem(HP_SPACES["standard"], "output_path", tmp_path / "best_hp.json")
     monkeypatch.setitem(HP_SPACES["cfk"], "output_path", tmp_path / "best_cfk_hp.json")
+    monkeypatch.setitem(HP_SPACES["euk"], "output_path", tmp_path / "best_euk_hp.json")
 
 
 def _create_fake_data(directory: Path, seed: int = 0):
@@ -54,8 +55,10 @@ def _create_fake_data(directory: Path, seed: int = 0):
 def test_hp_spaces_configuration():
     assert "standard" in HP_SPACES
     assert "cfk" in HP_SPACES
+    assert "euk" in HP_SPACES
     assert HP_SPACES["standard"]["objective_type"] == "val_loss"
     assert HP_SPACES["cfk"]["objective_type"] == "unlearning_loss"
+    assert HP_SPACES["euk"]["objective_type"] == "unlearning_loss"
 
 
 def test_hp_search_standard_objective(tmp_path):
@@ -108,3 +111,86 @@ def test_hp_search_cfk_objective(tmp_path, monkeypatch):
     
     assert len(study.trials) == 2
     assert study.best_value is not None
+
+
+def test_hp_search_euk_objective(tmp_path, monkeypatch):
+    _create_fake_data(tmp_path, seed=0)
+    
+    # Crear pesos base y naive dummy
+    weights_dir = tmp_path / "models" / "weights"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+    
+    from models.base_nn import BaseMLP
+    model = BaseMLP(input_dim=2, hidden_dim=8, output_dim=3)
+    torch.save(model.state_dict(), weights_dir / "base_model_seed_0.pth")
+    torch.save(model.state_dict(), weights_dir / "naive_model_seed_0.pth")
+    
+    # Crear models/best_hp.json dummy en tmp_path
+    best_hp_path = tmp_path / "best_hp.json"
+    with open(best_hp_path, "w", encoding="utf-8") as f:
+        json.dump({"hidden_dim": 8, "lr": 0.01, "batch_size": 16, "epochs": 50}, f)
+        
+    # Redirigir load_best_hp para leer de nuestro best_hp_path temporal
+    monkeypatch.setattr(hp_search_module, "load_best_hp", lambda f: {"hidden_dim": 8, "lr": 0.01, "batch_size": 16, "epochs": 50})
+    
+    # Redirigir torch.load para leer del directorio temporal de pesos
+    _original_torch_load = torch.load
+    def patched_torch_load(f, *args, **kwargs):
+        filename = Path(f).name
+        return _original_torch_load(weights_dir / filename, *args, **kwargs)
+    monkeypatch.setattr(hp_search_module.torch, "load", patched_torch_load)
+    
+    study = optuna.create_study(direction="minimize")
+    
+    def objective_wrapper(trial):
+        return hp_search_module.objective(trial, protocol="euk", seed=0, model_arch="models.base_nn.BaseMLP")
+        
+    study.optimize(objective_wrapper, n_trials=2)
+    
+    assert len(study.trials) == 2
+    assert study.best_value is not None
+
+
+def test_hp_search_resnet_custom_dataset(tmp_path):
+    """
+    Test Optuna objective for ResNet18 model on a custom dataset name.
+    """
+    import numpy as np
+    rng = np.random.default_rng(42)
+    y_retain = rng.integers(0, 3, 10)
+    y_retain[:3] = np.arange(3)
+    y_forget = rng.integers(0, 3, 5)
+    y_forget[:3] = np.arange(3)
+    y_val = rng.integers(0, 3, 5)
+    y_val[:3] = np.arange(3)
+    y_test = rng.integers(0, 3, 5)
+    y_test[:3] = np.arange(3)
+
+    np.savez(
+        tmp_path / "cifar10_fake_splits_seed_0.npz",
+        X_retain=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_retain=y_retain,
+        X_forget=rng.standard_normal((5, 3, 8, 8)).astype(np.float32),
+        y_forget=y_forget,
+        X_val=rng.standard_normal((5, 3, 8, 8)).astype(np.float32),
+        y_val=y_val,
+        X_test=rng.standard_normal((5, 3, 8, 8)).astype(np.float32),
+        y_test=y_test,
+    )
+    
+    study = optuna.create_study(direction="minimize")
+    
+    def objective_wrapper(trial):
+        return hp_search_module.objective(
+            trial, 
+            protocol="standard", 
+            seed=0, 
+            model_arch="models.resnet.ResNet18", 
+            dataset="cifar10_fake"
+        )
+        
+    study.optimize(objective_wrapper, n_trials=2)
+    
+    assert len(study.trials) == 2
+    assert study.best_value is not None
+

@@ -208,6 +208,54 @@ def test_calculate_metrics_integration(tmp_path):
     assert loaded["unlearned_name"] == "cfk"
 
 
+def test_calculate_metrics_integration_euk(tmp_path):
+    # 1. Crear datasets para semillas 0 y 1
+    _create_fake_npz(tmp_path, seed=0)
+    _create_fake_npz(tmp_path, seed=1)
+    
+    # 2. Crear pesos dummy y metadatos para base, naive, y unlearned para ambas semillas
+    weights_dir = tmp_path / "models" / "weights"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+    
+    from models.base_nn import BaseMLP
+    for seed in [0, 1]:
+        for prefix in ["base", "naive", "euk"]:
+            model = BaseMLP(input_dim=2, hidden_dim=8, output_dim=3)
+            torch.save(model.state_dict(), weights_dir / f"{prefix}_model_seed_{seed}.pth")
+            
+            # Guardar metadatos dummy
+            meta = {"epochs": 10, "time_elapsed": 1.5}
+            with open(weights_dir / f"{prefix}_model_seed_{seed}_meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+            
+    # 3. Correr cálculo de métricas
+    output_dir = tmp_path / "results"
+    results = metricas_module.calculate_metrics(
+        unlearned_name="euk",
+        base_name="base",
+        naive_name="naive",
+        model_arch="models.base_nn.BaseMLP",
+        seeds=[0, 1],
+        hp={"hidden_dim": 8},
+        output_dir=str(output_dir),
+        weights_dir=str(weights_dir)
+    )
+    
+    # 4. Aseverar estructura
+    assert results["unlearned_name"] == "euk"
+    assert results["seeds"] == [0, 1]
+    assert "0" in results["per_seed"]
+    assert "1" in results["per_seed"]
+    
+    # Verificar que el JSON se guardó correctamente
+    json_file = output_dir / "euk_metrics.json"
+    assert json_file.exists()
+    
+    with open(json_file, "r", encoding="utf-8") as f:
+        loaded = json.load(f)
+    assert loaded["unlearned_name"] == "euk"
+
+
 class FlexibleModel(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
@@ -273,3 +321,63 @@ def test_calculate_metrics_zero_division_protection(tmp_path):
     
     # Naive time es 0.0, cfk time es 3.0. TR debe ser float("inf").
     assert results["per_seed"]["0"]["unlearned"]["TR"] == float("inf")
+
+
+def test_calculate_metrics_resnet_custom_dataset(tmp_path):
+    """
+    Test metric calculations for ResNet18 model on a custom dataset name.
+    """
+    import numpy as np
+    rng = np.random.default_rng(42)
+    y_retain = rng.integers(0, 3, 20)
+    y_retain[:3] = np.arange(3)
+    y_forget = rng.integers(0, 3, 10)
+    y_forget[:3] = np.arange(3)
+    y_val = rng.integers(0, 3, 10)
+    y_val[:3] = np.arange(3)
+    y_test = rng.integers(0, 3, 10)
+    y_test[:3] = np.arange(3)
+
+    np.savez(
+        tmp_path / "cifar10_fake_splits_seed_0.npz",
+        X_retain=rng.standard_normal((20, 3, 8, 8)).astype(np.float32),
+        y_retain=y_retain,
+        X_forget=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_forget=y_forget,
+        X_val=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_val=y_val,
+        X_test=rng.standard_normal((10, 3, 8, 8)).astype(np.float32),
+        y_test=y_test,
+    )
+
+    weights_dir = tmp_path / "models" / "weights"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+
+    from models.resnet import ResNet18
+    for prefix in ["base", "naive", "cfk"]:
+        model = ResNet18(in_channels=3, num_classes=3)
+        torch.save(model.state_dict(), weights_dir / f"{prefix}_model_seed_0.pth")
+
+        # Save metadata
+        meta = {"epochs": 5, "time_elapsed": 1.0}
+        with open(weights_dir / f"{prefix}_model_seed_0_meta.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f)
+
+    output_dir = tmp_path / "results"
+    results = metricas_module.calculate_metrics(
+        unlearned_name="cfk",
+        base_name="base",
+        naive_name="naive",
+        model_arch="models.resnet.ResNet18",
+        seeds=[0],
+        hp={},
+        output_dir=str(output_dir),
+        weights_dir=str(weights_dir),
+        dataset="cifar10_fake"
+    )
+
+    assert results["unlearned_name"] == "cfk"
+    assert "0" in results["per_seed"]
+    assert results["per_seed"]["0"]["unlearned"]["epochs"] == 5
+    assert results["per_seed"]["0"]["unlearned"]["time"] == 1.0
+
