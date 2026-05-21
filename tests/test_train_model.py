@@ -377,7 +377,7 @@ class TestTrainModel_Execution:
         parser.add_argument("--hidden_dim", type=int)
         parser.add_argument("--seeds", type=str, default="0,1,2")
         parser.add_argument("--pretrained_weights", type=str, default=None)
-        parser.add_argument("--k", type=int, default=1)
+        parser.add_argument("--k", type=int, default=None)
         parser.add_argument("--no_verbose", dest="verbose", action="store_false")
         parser.set_defaults(verbose=True)
         

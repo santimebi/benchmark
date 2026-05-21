@@ -279,7 +279,7 @@ if __name__ == "__main__":
                         help="Semillas para las cuales entrenar el modelo, separadas por comas (ej. 0,1,2)")
     parser.add_argument("--pretrained_weights", type=str, default=None,
                         help="Ruta a los pesos pre-entrenados del modelo (puede usar {seed} para formatear dinámicamente)")
-    parser.add_argument("--k", type=int, default=1,
+    parser.add_argument("--k", type=int, default=None,
                         help="Número de últimas capas a descongelar para el protocolo cfk")
     parser.add_argument("--dataset", type=str, default="spiral",
                         help="Nombre o prefijo del dataset a cargar (ej. spiral, cifar10)")
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         "batch_size": args.batch_size if args.batch_size is not None else best_hp.get("batch_size", 32),
         "lr": args.lr if args.lr is not None else best_hp.get("lr", 1e-3),
         "hidden_dim": args.hidden_dim if args.hidden_dim is not None else best_hp.get("hidden_dim", 16),
-        "k": args.k,
+        "k": args.k if args.k is not None else best_hp.get("k", 1),
     }
     
     # Procesar listas
