@@ -380,6 +380,8 @@ if __name__ == "__main__":
                         help="Directorio donde se encuentran los pesos y metadatos de los modelos")
     parser.add_argument("--dataset", type=str, default="spiral",
                         help="Nombre o prefijo del dataset (default: spiral)")
+    parser.add_argument("--output_dir", type=str, default="results",
+                        help="Directorio de salida para los resultados JSON")
                         
     args = parser.parse_args()
     
