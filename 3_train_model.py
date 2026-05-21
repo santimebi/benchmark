@@ -28,6 +28,8 @@ from torch.utils.data import TensorDataset, DataLoader
 
 from utils.config import DATASETS_PATH
 
+WEIGHTS_DIR = Path("models/weights")
+
 
 def load_class(class_path: str):
     """
@@ -239,12 +241,11 @@ def train_model(
     elapsed_time = time.perf_counter() - start_time
     
     # 5. Guardar el modelo y sus metadatos
-    weights_dir = Path("models/weights")
-    weights_dir.mkdir(parents=True, exist_ok=True)
-    model_path = weights_dir / f"{model_name}_model_seed_{seed}.pth"
+    WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
+    model_path = WEIGHTS_DIR / f"{model_name}_model_seed_{seed}.pth"
     torch.save(model.state_dict(), model_path)
     
-    meta_path = weights_dir / f"{model_name}_model_seed_{seed}_meta.json"
+    meta_path = WEIGHTS_DIR / f"{model_name}_model_seed_{seed}_meta.json"
     meta_data = {
         "epochs": epochs,
         "time_elapsed": elapsed_time

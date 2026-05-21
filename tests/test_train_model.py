@@ -54,25 +54,13 @@ def fake_dataset(tmp_path):
     return tmp_path
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def weights_dir(tmp_path, monkeypatch):
     """
-    Redirige el guardado de pesos interceptando torch.save.
+    Redirige WEIGHTS_DIR a un directorio temporal para evitar polución.
     """
     target_dir = tmp_path / "models" / "weights"
-
-    _original_torch_save = torch.save
-    _saved_paths = []
-
-    def _patched_save(obj, f, *args, **kwargs):
-        if isinstance(f, Path) and "_model_seed" in str(f):
-            target_dir.mkdir(parents=True, exist_ok=True)
-            new_path = target_dir / f.name
-            _saved_paths.append(new_path)
-            return _original_torch_save(obj, new_path, *args, **kwargs)
-        return _original_torch_save(obj, f, *args, **kwargs)
-
-    monkeypatch.setattr(train_module.torch, "save", _patched_save)
+    monkeypatch.setattr(train_module, "WEIGHTS_DIR", target_dir)
     return target_dir
 
 

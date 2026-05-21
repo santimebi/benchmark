@@ -25,6 +25,9 @@ from utils.config import DATASETS_PATH
 from utils.hp_spaces import HP_SPACES
 from utils.protocols import get_protocol
 
+WEIGHTS_DIR = Path("models/weights")
+
+
 
 def load_class(class_path: str):
     """
@@ -177,8 +180,8 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         model_class = load_class(model_arch)
         
         # Cargar pesos del modelo base y naive pre-entrenados para la semilla de calibración
-        base_weights_path = Path(f"models/weights/base_model_seed_{seed}.pth")
-        naive_weights_path = Path(f"models/weights/naive_model_seed_{seed}.pth")
+        base_weights_path = WEIGHTS_DIR / f"base_model_seed_{seed}.pth"
+        naive_weights_path = WEIGHTS_DIR / f"naive_model_seed_{seed}.pth"
         
         if not base_weights_path.exists() or not naive_weights_path.exists():
             raise FileNotFoundError(
