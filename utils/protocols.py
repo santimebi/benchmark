@@ -433,7 +433,7 @@ class CFGKRegularizedLoss(nn.Module):
 
             squared_sum = squared_sum + torch.sum((parameter - reference_parameter) ** 2)
 
-        norm = torch.sqrt(squared_sum)
+        norm = torch.sqrt(squared_sum + 1e-8)
         penalty = self.c * torch.exp(-torch.pow(norm + self.beta, self.gamma))
 
         if not torch.isfinite(penalty):
@@ -629,6 +629,9 @@ def run_cfgk_unlearning(
         logs_dict["cfgk_norm_final"] = last_batch_logs["cfgk_norm"].item()
         logs_dict["loss_cfgk_penalty_initial"] = first_batch_logs["loss_cfgk_penalty"].item()
         logs_dict["loss_cfgk_penalty_final"] = last_batch_logs["loss_cfgk_penalty"].item()
+
+    return model
+
 
 def generate_gaussian_perturbation(x: torch.Tensor, tau: float) -> torch.Tensor:
     """
