@@ -154,6 +154,14 @@ def train_model(
     val_dataset = TensorDataset(X_val_t, y_val_t)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
+    # Cargar forget set para RURK
+    forget_loader = None
+    if protocol == "rurk":
+        X_forget, y_forget, _, _ = load_dataset_splits(data_path, ["forget"])
+        X_forget_t = torch.tensor(X_forget, dtype=torch.float32)
+        y_forget_t = torch.tensor(y_forget, dtype=torch.long)
+        forget_loader = DataLoader(TensorDataset(X_forget_t, y_forget_t), batch_size=batch_size, shuffle=True)
+    
     # 2. Instanciar el modelo
     model_class = load_class(model_arch)
     
@@ -225,6 +233,8 @@ def train_model(
     kwargs = {}
     if "hp" in protocol_sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in protocol_sig.parameters.values()):
         kwargs["hp"] = hp
+    if forget_loader is not None:
+        kwargs["forget_loader"] = forget_loader
         
     start_time = time.perf_counter()
     model = protocol_fn(

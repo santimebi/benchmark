@@ -29,7 +29,7 @@ def load_class(class_path: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Graficar fronteras de decisión en un grid de 3x3.")
-    parser.add_argument("--unlearned_name", type=str, default="cfk", choices=["cfk", "euk"],
+    parser.add_argument("--unlearned_name", type=str, default="cfk", choices=["cfk", "euk", "cfgk"],
                         help="Nombre del método de desaprendizaje (cfk o euk)")
     parser.add_argument("--model_arch", type=str, default="models.base_nn.BaseMLP",
                         help="Arquitectura del modelo")

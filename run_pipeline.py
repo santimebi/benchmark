@@ -86,6 +86,22 @@ def main():
         "Paso 5: Aplicación del protocolo CFK"
     )
 
+    # 5.1. Búsqueda de hiperparámetros para desaprendizaje CFGK
+    run_command(
+        [py, "00_hp_search.py", "--protocol", "cfgk", "--dataset", args.dataset, 
+         "--model_arch", args.model_arch, "--n_trials", str(args.n_trials), "--seed", "0"],
+        "Paso 5.1: Búsqueda de HP para desaprendizaje CFGK"
+    )
+
+    # 5.2. Aplicar desaprendizaje CFGK para las semillas
+    run_command(
+        [py, "3_train_model.py", "--model_arch", args.model_arch, "--protocol", "cfgk",
+         "--train_splits", "retain", "--model_name", "cfgk", "--dataset", args.dataset, 
+         "--pretrained_weights", str(MODELS_PATH / "weights/base_model_seed_{seed}.pth"), 
+         "--hp_file", str(MODELS_PATH / "best_cfgk_hp.json"), "--seeds", args.seeds],
+        "Paso 5.2: Aplicación del protocolo CFGK"
+    )
+
     # 6. Búsqueda de hiperparámetros para desaprendizaje EUK
     run_command(
         [py, "00_hp_search.py", "--protocol", "euk", "--dataset", args.dataset, 
@@ -102,6 +118,22 @@ def main():
         "Paso 7: Aplicación del protocolo EUK"
     )
 
+    # 7.1. Búsqueda de hiperparámetros para desaprendizaje RURK (Optuna con 1 trial)
+    run_command(
+        [py, "00_hp_search.py", "--protocol", "rurk", "--dataset", args.dataset, 
+         "--model_arch", args.model_arch, "--n_trials", "1", "--seed", "0"],
+        "Paso 7.1: Búsqueda de HP para desaprendizaje RURK"
+    )
+
+    # 7.2. Aplicar desaprendizaje RURK para las semillas
+    run_command(
+        [py, "3_train_model.py", "--model_arch", args.model_arch, "--protocol", "rurk",
+         "--train_splits", "retain", "--model_name", "rurk", "--dataset", args.dataset, 
+         "--pretrained_weights", str(MODELS_PATH / "weights/base_model_seed_{seed}.pth"), 
+         "--hp_file", str(MODELS_PATH / "best_rurk_hp.json"), "--seeds", args.seeds],
+        "Paso 7.2: Aplicación del protocolo RURK"
+    )
+
     # 8. Evaluación de métricas para CFK
     run_command(
         [py, "4_metricas.py", "--unlearned_name", "cfk", "--model_arch", args.model_arch, 
@@ -110,12 +142,28 @@ def main():
         "Paso 8: Evaluación de métricas para el protocolo CFK"
     )
 
+    # 8.5. Evaluación de métricas para CFGK
+    run_command(
+        [py, "4_metricas.py", "--unlearned_name", "cfgk", "--model_arch", args.model_arch, 
+         "--dataset", args.dataset, "--seeds", args.seeds,
+         "--rk_tau", str(args.rk_tau), "--rk_c", str(args.rk_c), "--rk_chunk_size", str(args.rk_chunk_size)],
+        "Paso 8.5: Evaluación de métricas para el protocolo CFGK"
+    )
+
     # 9. Evaluación de métricas para EUK
     run_command(
         [py, "4_metricas.py", "--unlearned_name", "euk", "--model_arch", args.model_arch, 
          "--dataset", args.dataset, "--seeds", args.seeds,
          "--rk_tau", str(args.rk_tau), "--rk_c", str(args.rk_c), "--rk_chunk_size", str(args.rk_chunk_size)],
         "Paso 9: Evaluación de métricas para el protocolo EUK"
+    )
+
+    # 9.5. Evaluación de métricas para RURK
+    run_command(
+        [py, "4_metricas.py", "--unlearned_name", "rurk", "--model_arch", args.model_arch, 
+         "--dataset", args.dataset, "--seeds", args.seeds,
+         "--rk_tau", str(args.rk_tau), "--rk_c", str(args.rk_c), "--rk_chunk_size", str(args.rk_chunk_size)],
+        "Paso 9.5: Evaluación de métricas para el protocolo RURK"
     )
 
     # 10. Generar tabla de métricas resumida

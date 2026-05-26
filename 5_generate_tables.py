@@ -42,12 +42,18 @@ def main():
                         help="Path to CFK metrics JSON file")
     parser.add_argument("--euk_file", type=str, default=str(RESULTS_PATH / "euk_metrics.json"),
                         help="Path to EUK metrics JSON file")
+    parser.add_argument("--cfgk_file", type=str, default=str(RESULTS_PATH / "cfgk_metrics.json"),
+                        help="Path to CFGK metrics JSON file")
+    parser.add_argument("--rurk_file", type=str, default=str(RESULTS_PATH / "rurk_metrics.json"),
+                        help="Path to RURK metrics JSON file")
     parser.add_argument("--output_file", type=str, default=str(RESULTS_PATH / "metrics_table.md"),
                         help="Path to save the generated Markdown table")
     args = parser.parse_args()
 
     cfk_path = Path(args.cfk_file)
     euk_path = Path(args.euk_file)
+    cfgk_path = Path(args.cfgk_file)
+    rurk_path = Path(args.rurk_file)
 
     if not cfk_path.exists():
         print(f"Error: {cfk_path} not found.")
@@ -55,14 +61,26 @@ def main():
     if not euk_path.exists():
         print(f"Error: {euk_path} not found.")
         return
+    if not cfgk_path.exists():
+        print(f"Error: {cfgk_path} not found.")
+        return
+    if not rurk_path.exists():
+        print(f"Error: {rurk_path} not found.")
+        return
 
     with open(cfk_path, "r", encoding="utf-8") as f:
         cfk_data = json.load(f)
     with open(euk_path, "r", encoding="utf-8") as f:
         euk_data = json.load(f)
+    with open(cfgk_path, "r", encoding="utf-8") as f:
+        cfgk_data = json.load(f)
+    with open(rurk_path, "r", encoding="utf-8") as f:
+        rurk_data = json.load(f)
 
     cfk_agg = cfk_data["aggregated"]
     euk_agg = euk_data["aggregated"]
+    cfgk_agg = cfgk_data["aggregated"]
+    rurk_agg = rurk_data["aggregated"]
 
     table_data = [
         {
@@ -104,6 +122,26 @@ def main():
             "rr": format_ratio(euk_agg["unlearned_RR"]["mean"], euk_agg["unlearned_RR"]["std"]),
             "tr": format_ratio(euk_agg["unlearned_TR"]["mean"], euk_agg["unlearned_TR"]["std"]),
             "rk": format_rk(euk_agg["unlearned_RK"]["mean"], euk_agg["unlearned_RK"]["std"]),
+        },
+        {
+            "name": "**CFGK Unlearning**",
+            "retain": format_acc(cfgk_agg["unlearned_retain"]["mean"], cfgk_agg["unlearned_retain"]["std"]),
+            "forget": format_acc(cfgk_agg["unlearned_forget"]["mean"], cfgk_agg["unlearned_forget"]["std"]),
+            "test": format_acc(cfgk_agg["unlearned_test"]["mean"], cfgk_agg["unlearned_test"]["std"]),
+            "time": format_time(cfgk_agg["unlearned_time"]["mean"], cfgk_agg["unlearned_time"]["std"]),
+            "rr": format_ratio(cfgk_agg["unlearned_RR"]["mean"], cfgk_agg["unlearned_RR"]["std"]),
+            "tr": format_ratio(cfgk_agg["unlearned_TR"]["mean"], cfgk_agg["unlearned_TR"]["std"]),
+            "rk": format_rk(cfgk_agg["unlearned_RK"]["mean"], cfgk_agg["unlearned_RK"]["std"]),
+        },
+        {
+            "name": "**RURK Unlearning**",
+            "retain": format_acc(rurk_agg["unlearned_retain"]["mean"], rurk_agg["unlearned_retain"]["std"]),
+            "forget": format_acc(rurk_agg["unlearned_forget"]["mean"], rurk_agg["unlearned_forget"]["std"]),
+            "test": format_acc(rurk_agg["unlearned_test"]["mean"], rurk_agg["unlearned_test"]["std"]),
+            "time": format_time(rurk_agg["unlearned_time"]["mean"], rurk_agg["unlearned_time"]["std"]),
+            "rr": format_ratio(rurk_agg["unlearned_RR"]["mean"], rurk_agg["unlearned_RR"]["std"]),
+            "tr": format_ratio(rurk_agg["unlearned_TR"]["mean"], rurk_agg["unlearned_TR"]["std"]),
+            "rk": format_rk(rurk_agg["unlearned_RK"]["mean"], rurk_agg["unlearned_RK"]["std"]),
         }
     ]
 

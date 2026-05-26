@@ -38,5 +38,33 @@ HP_SPACES: Dict[str, Dict[str, Any]] = {
         },
         "objective_type": "unlearning_loss",
         "output_path": MODELS_PATH / "best_euk_hp.json",
+    },
+    "cfgk": {
+        "suggest_fn": lambda trial, model_arch="": {
+            "lr": trial.suggest_float("lr", 1e-5, 1e-1, log=True),
+            "k": trial.suggest_categorical("k", [1, 5, 9, 13, 17, 18]) if "resnet" in str(model_arch).lower() else trial.suggest_int("k", 1, 3),
+            "c": trial.suggest_float("c", -2.0, 8.0),
+            "gamma": trial.suggest_float("gamma", -1.0, 10.0),
+            "epochs": 20,
+        },
+        "objective_type": "unlearning_loss",
+        "output_path": MODELS_PATH / "best_cfgk_hp.json",
+    },
+    "rurk": {
+        "suggest_fn": lambda trial, model_arch="": {
+            "lr": trial.suggest_categorical("lr", [0.01]),
+            "momentum": 0.90,
+            "weight_decay": 5e-4,
+            "tau": 0.03,
+            "lambda_f": 0.03,
+            "lambda_a": 0.00045,
+            "epochs": 2,
+            "max_total_iterations": 200,
+            "gradient_clip_norm": 1.0,
+            "v": 1,
+            "batch_size": 128
+        },
+        "objective_type": "unlearning_loss",
+        "output_path": MODELS_PATH / "best_rurk_hp.json",
     }
 }

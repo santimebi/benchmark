@@ -172,9 +172,10 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         X_forget_t = torch.tensor(X_forget, dtype=torch.float32)
         y_forget_t = torch.tensor(y_forget, dtype=torch.long)
         
-        # Entrenamos fine-tuning usando el batch size original del modelo base
-        train_loader = DataLoader(TensorDataset(X_retain_t, y_retain_t), batch_size=base_batch_size, shuffle=True)
-        val_loader = DataLoader(TensorDataset(X_retain_t, y_retain_t), batch_size=base_batch_size, shuffle=False)
+        batch_size = suggested_hp.get("batch_size", 128) if protocol == "rurk" else base_batch_size
+        # Entrenamos fine-tuning usando el batch size especificado
+        train_loader = DataLoader(TensorDataset(X_retain_t, y_retain_t), batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(TensorDataset(X_retain_t, y_retain_t), batch_size=batch_size, shuffle=False)
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_class = load_class(model_arch)
@@ -248,6 +249,12 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         if "hp" in protocol_sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in protocol_sig.parameters.values()):
             kwargs["hp"] = suggested_hp
             
+        logs_dict = {}
+        if protocol == "cfgk":
+            kwargs["logs_dict"] = logs_dict
+        elif protocol == "rurk":
+            kwargs["forget_loader"] = DataLoader(TensorDataset(X_forget_t, y_forget_t), batch_size=batch_size, shuffle=True)
+            
         unlearned_model = protocol_fn(
             model=base_model,
             train_loader=train_loader,
@@ -259,6 +266,10 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
             verbose=False,
             **kwargs
         )
+        
+        if protocol == "cfgk" and logs_dict:
+            for k, v in logs_dict.items():
+                trial.set_user_attr(k, v)
         
         # Evaluar el modelo desentrenado
         unlearned_model.eval()
@@ -320,8 +331,11 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset
     # Añadir valores implícitos de configuración si los hay
     # (Por ejemplo, en CFK epochs es fijo a 20 y usa el hidden_dim de la base)
     suggested_params = dict(best.params)
-    if protocol in ["cfk", "euk"]:
-        suggested_params["epochs"] = 20
+    if protocol in ["cfk", "euk", "cfgk", "rurk"]:
+        if protocol != "rurk":
+            suggested_params["epochs"] = 20
+        else:
+            suggested_params["epochs"] = 2
         best_base_hp = load_best_hp(MODELS_PATH / "best_hp.json")
         suggested_params["hidden_dim"] = best_base_hp.get("hidden_dim", 64)
         
@@ -338,7 +352,7 @@ if __name__ == "__main__":
         "--protocol",
         type=str,
         default="standard",
-        choices=["standard", "cfk", "euk"],
+        choices=["standard", "cfk", "euk", "cfgk", "rurk"],
         help="Nombre del protocolo a buscar en HP_SPACES (default: standard)."
     )
     parser.add_argument(
