@@ -25,8 +25,8 @@ def run_command(cmd, desc):
 
 def main():
     parser = argparse.ArgumentParser(description="Script de automatización para ejecutar todo el pipeline del benchmark.")
-    parser.add_argument("--dataset", type=str, default="cifar_nano", choices=["cifar_nano", "spiral"],
-                        help="Nombre del dataset a utilizar (cifar_nano o spiral)")
+    parser.add_argument("--dataset", type=str, default="cifar_nano", choices=["cifar_nano", "spiral", "cifar10"],
+                        help="Nombre del dataset a utilizar (cifar_nano, spiral, o cifar10)")
     parser.add_argument("--model_arch", type=str, default="models.resnet.ResNet18",
                         help="Import path de la arquitectura del modelo")
     parser.add_argument("--n_trials", type=int, default=5,
