@@ -23,7 +23,9 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from utils.config import DATASETS_PATH
+from utils.config import DATASETS_PATH, MODELS_PATH, RESULTS_PATH
+from utils.residual_knowledge import compute_residual_knowledge
+
 
 
 def load_class(class_path: str):
@@ -78,13 +80,21 @@ def calculate_metrics(
     model_arch: str = "models.base_nn.BaseMLP",
     seeds: list[int] = [0, 1, 2],
     hp: dict = None,
-    output_dir: str = "results",
-    weights_dir: str = "models/weights",
-    dataset: str = "spiral"
+    output_dir: str = None,
+    weights_dir: str = None,
+    dataset: str = "spiral",
+    rk_tau: float = 0.03,
+    rk_c: int = 100,
+    rk_chunk_size: int = 100
 ) -> dict:
     """
-    Calcula y reporta la precisión absoluta y los ratios relacionales (RR, RF, RT, TR) por semilla.
+    Calcula y reporta la precisión absoluta y los ratios relacionales (RR, RF, RT, TR) por semilla,
+    así como la métrica Residual Knowledge (RK).
     """
+    if output_dir is None:
+        output_dir = str(RESULTS_PATH)
+    if weights_dir is None:
+        weights_dir = str(MODELS_PATH / "weights")
     if hp is None:
         hp = {}
     hidden_dim = hp.get("hidden_dim", 16)
@@ -104,14 +114,17 @@ def calculate_metrics(
         "base_retain": [], "base_forget": [], "base_test": [],
         "base_RR": [], "base_RF": [], "base_RT": [],
         "base_epochs": [], "base_time": [], "base_TR": [],
+        "base_RK": [],
         
         "naive_retain": [], "naive_forget": [], "naive_test": [],
         "naive_RR": [], "naive_RF": [], "naive_RT": [],
         "naive_epochs": [], "naive_time": [], "naive_TR": [],
+        "naive_RK": [],
         
         "unlearned_retain": [], "unlearned_forget": [], "unlearned_test": [],
         "unlearned_RR": [], "unlearned_RF": [], "unlearned_RT": [],
-        "unlearned_epochs": [], "unlearned_time": [], "unlearned_TR": []
+        "unlearned_epochs": [], "unlearned_time": [], "unlearned_TR": [],
+        "unlearned_RK": []
     }
     
     print("\n" + "="*80)
@@ -231,6 +244,59 @@ def calculate_metrics(
             else:
                 tr = 1.0 if model_time == 0 else float("inf")
             time_ratios[f"{key}_TR"] = tr
+
+        # Crear DataLoader para S_f (forget set)
+        X_forget_t = torch.tensor(X_forget, dtype=torch.float32)
+        y_forget_t = torch.tensor(y_forget, dtype=torch.long)
+        forget_dataset = torch.utils.data.TensorDataset(X_forget_t, y_forget_t)
+        forget_loader = torch.utils.data.DataLoader(forget_dataset, batch_size=64, shuffle=False)
+
+        # Calcular Residual Knowledge (RK)
+        rk_res_base = compute_residual_knowledge(
+            model_unlearned=models["base"],
+            model_retrained=models["naive"],
+            forget_loader=forget_loader,
+            tau=rk_tau,
+            c=rk_c,
+            device=str(device),
+            seed=seed,
+            mc_chunk_size=rk_chunk_size,
+        )
+        rk_res_naive = compute_residual_knowledge(
+            model_unlearned=models["naive"],
+            model_retrained=models["naive"],
+            forget_loader=forget_loader,
+            tau=rk_tau,
+            c=rk_c,
+            device=str(device),
+            seed=seed,
+            mc_chunk_size=rk_chunk_size,
+        )
+        rk_res_unlearned = compute_residual_knowledge(
+            model_unlearned=models["unlearned"],
+            model_retrained=models["naive"],
+            forget_loader=forget_loader,
+            tau=rk_tau,
+            c=rk_c,
+            device=str(device),
+            seed=seed,
+            mc_chunk_size=rk_chunk_size,
+        )
+
+        # Guardar CSV de sample-level RK para el unlearned model
+        import csv
+        csv_dir = Path(output_dir)
+        csv_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = csv_dir / f"{unlearned_name}_rk_per_sample_seed_{seed}.csv"
+        with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["sample_id", "label", "u_counts", "r_counts", "rk_raw"])
+            for idx in range(len(y_forget)):
+                u_val = rk_res_unlearned["u_counts"][idx]
+                r_val = rk_res_unlearned["r_counts"][idx]
+                rk_val = rk_res_unlearned["rk_tau_per_sample"][idx]
+                rk_str = "nan" if np.isnan(rk_val) else f"{rk_val:.6f}"
+                writer.writerow([idx, int(y_forget[idx]), u_val, r_val, rk_str])
             
         # Guardar en per_seed
         results["per_seed"][str(seed)] = {
@@ -243,7 +309,13 @@ def calculate_metrics(
                 "RR": ratios["base_RR"],
                 "RF": ratios["base_RF"],
                 "RT": ratios["base_RT"],
-                "TR": time_ratios["base_TR"]
+                "TR": time_ratios["base_TR"],
+                "rk_tau_forget_set": rk_res_base["rk_tau_forget_set"],
+                "rk_tau_per_sample": rk_res_base["rk_tau_per_sample"],
+                "u_counts": rk_res_base["u_counts"],
+                "r_counts": rk_res_base["r_counts"],
+                "rk_tau": rk_res_base["tau"],
+                "rk_c": rk_res_base["c"]
             },
             "naive": {
                 "retain": accs["naive_retain"],
@@ -254,7 +326,13 @@ def calculate_metrics(
                 "RR": ratios["naive_RR"],
                 "RF": ratios["naive_RF"],
                 "RT": ratios["naive_RT"],
-                "TR": time_ratios["naive_TR"]
+                "TR": time_ratios["naive_TR"],
+                "rk_tau_forget_set": rk_res_naive["rk_tau_forget_set"],
+                "rk_tau_per_sample": rk_res_naive["rk_tau_per_sample"],
+                "u_counts": rk_res_naive["u_counts"],
+                "r_counts": rk_res_naive["r_counts"],
+                "rk_tau": rk_res_naive["tau"],
+                "rk_c": rk_res_naive["c"]
             },
             "unlearned": {
                 "retain": accs["unlearned_retain"],
@@ -265,7 +343,13 @@ def calculate_metrics(
                 "RR": ratios["unlearned_RR"],
                 "RF": ratios["unlearned_RF"],
                 "RT": ratios["unlearned_RT"],
-                "TR": time_ratios["unlearned_TR"]
+                "TR": time_ratios["unlearned_TR"],
+                "rk_tau_forget_set": rk_res_unlearned["rk_tau_forget_set"],
+                "rk_tau_per_sample": rk_res_unlearned["rk_tau_per_sample"],
+                "u_counts": rk_res_unlearned["u_counts"],
+                "r_counts": rk_res_unlearned["r_counts"],
+                "rk_tau": rk_res_unlearned["tau"],
+                "rk_c": rk_res_unlearned["c"]
             }
         }
         
@@ -278,6 +362,13 @@ def calculate_metrics(
                 metrics_list[k_met].append(metadata_vals[k_met])
             elif met == "TR":
                 metrics_list[k_met].append(time_ratios[k_met])
+            elif met == "RK":
+                if key == "base":
+                    metrics_list[k_met].append(rk_res_base["rk_tau_forget_set"])
+                elif key == "naive":
+                    metrics_list[k_met].append(rk_res_naive["rk_tau_forget_set"])
+                elif key == "unlearned":
+                    metrics_list[k_met].append(rk_res_unlearned["rk_tau_forget_set"])
             else:
                 metrics_list[k_met].append(ratios[k_met])
                 
@@ -285,14 +376,17 @@ def calculate_metrics(
         print(f"  Base Model  | Retain Acc: {accs['base_retain']*100:.2f}% | Forget Acc: {accs['base_forget']*100:.2f}% | Test Acc: {accs['base_test']*100:.2f}%")
         print(f"  --> Ratios  | RR: {ratios['base_RR']:.4f} | RF: {ratios['base_RF']:.4f} | RT: {ratios['base_RT']:.4f}")
         print(f"  --> Tiempo  | Epochs: {metadata_vals['base_epochs']} | Time: {metadata_vals['base_time']:.4f}s | TR: {time_ratios['base_TR']:.4f}")
+        print(f"  --> RK      | RK: {rk_res_base['rk_tau_forget_set']:.4f}")
         
         print(f"  Naive Model | Retain Acc: {accs['naive_retain']*100:.2f}% | Forget Acc: {accs['naive_forget']*100:.2f}% | Test Acc: {accs['naive_test']*100:.2f}%")
         print(f"  --> Ratios  | RR: {ratios['naive_RR']:.4f} | RF: {ratios['naive_RF']:.4f} | RT: {ratios['naive_RT']:.4f}")
         print(f"  --> Tiempo  | Epochs: {metadata_vals['naive_epochs']} | Time: {metadata_vals['naive_time']:.4f}s | TR: {time_ratios['naive_TR']:.4f}")
+        print(f"  --> RK      | RK: {rk_res_naive['rk_tau_forget_set']:.4f}")
         
         print(f"  Unlearned   | Retain Acc: {accs['unlearned_retain']*100:.2f}% | Forget Acc: {accs['unlearned_forget']*100:.2f}% | Test Acc: {accs['unlearned_test']*100:.2f}%")
         print(f"  --> Ratios  | RR: {ratios['unlearned_RR']:.4f} | RF: {ratios['unlearned_RF']:.4f} | RT: {ratios['unlearned_RT']:.4f}")
         print(f"  --> Tiempo  | Epochs: {metadata_vals['unlearned_epochs']} | Time: {metadata_vals['unlearned_time']:.4f}s | TR: {time_ratios['unlearned_TR']:.4f}")
+        print(f"  --> RK      | RK: {rk_res_unlearned['rk_tau_forget_set']:.4f}")
 
     # Agregación (Media ± Desviación Estándar)
     for k_met, values in metrics_list.items():
@@ -326,32 +420,35 @@ def calculate_metrics(
         
     print(f"Base Model  | Retain: {fmt_aggr('base_retain')} | Forget: {fmt_aggr('base_forget')} | Test: {fmt_aggr('base_test')}")
     print(f"            | RR: {fmt_ratio('base_RR')} | RF: {fmt_ratio('base_RF')} | RT: {fmt_ratio('base_RT')}")
-    print(f"            | Epochs: {fmt_epochs('base_epochs')} | Time: {fmt_time('base_time')} | TR: {fmt_ratio('base_TR')}")
+    print(f"            | Epochs: {fmt_epochs('base_epochs')} | Time: {fmt_time('base_time')} | TR: {fmt_ratio('base_TR')} | RK: {fmt_ratio('base_RK')}")
     print("-" * 80)
     print(f"Naive Model | Retain: {fmt_aggr('naive_retain')} | Forget: {fmt_aggr('naive_forget')} | Test: {fmt_aggr('naive_test')}")
     print(f"            | RR: {fmt_ratio('naive_RR')} | RF: {fmt_ratio('naive_RF')} | RT: {fmt_ratio('naive_RT')}")
-    print(f"            | Epochs: {fmt_epochs('naive_epochs')} | Time: {fmt_time('naive_time')} | TR: {fmt_ratio('naive_TR')}")
+    print(f"            | Epochs: {fmt_epochs('naive_epochs')} | Time: {fmt_time('naive_time')} | TR: {fmt_ratio('naive_TR')} | RK: {fmt_ratio('naive_RK')}")
     print("-" * 80)
     print(f"Unlearned   | Retain: {fmt_aggr('unlearned_retain')} | Forget: {fmt_aggr('unlearned_forget')} | Test: {fmt_aggr('unlearned_test')}")
     print(f"            | RR: {fmt_ratio('unlearned_RR')} | RF: {fmt_ratio('unlearned_RF')} | RT: {fmt_ratio('unlearned_RT')}")
-    print(f"            | Epochs: {fmt_epochs('unlearned_epochs')} | Time: {fmt_time('unlearned_time')} | TR: {fmt_ratio('unlearned_TR')}")
+    print(f"            | Epochs: {fmt_epochs('unlearned_epochs')} | Time: {fmt_time('unlearned_time')} | TR: {fmt_ratio('unlearned_TR')} | RK: {fmt_ratio('unlearned_RK')}")
     print("="*80)
     
     # Guardar en archivo JSON
     out_dir_path = Path(output_dir)
     out_dir_path.mkdir(parents=True, exist_ok=True)
     out_file = out_dir_path / f"{unlearned_name}_metrics.json"
-    
-    # Manejar posibles valores infinitos o NaN para guardado JSON
-    def serialize_val(v):
-        if isinstance(v, float):
-            if np.isinf(v) or np.isnan(v):
-                return str(v)
-        return v
+
+    # Manejar posibles valores infinitos o NaN para guardado JSON recursivamente
+    def clean_nans(obj):
+        if isinstance(obj, dict):
+            return {k: clean_nans(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [clean_nans(x) for x in obj]
+        elif isinstance(obj, (float, np.floating)):
+            import math
+            if math.isnan(obj) or math.isinf(obj):
+                return str(obj)
+        return obj
         
-    cleaned_results = json.loads(
-        json.dumps(results, default=serialize_val)
-    )
+    cleaned_results = clean_nans(results)
     
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(cleaned_results, f, indent=4, ensure_ascii=False)
@@ -372,16 +469,23 @@ if __name__ == "__main__":
                         help="Import path de la arquitectura a instanciar")
     parser.add_argument("--seeds", type=str, default="0,1,2",
                         help="Semillas a evaluar separadas por comas (ej: 0,1,2)")
-    parser.add_argument("--hp_file", type=str, default="models/best_hp.json",
+    parser.add_argument("--hp_file", type=str, default=str(MODELS_PATH / "best_hp.json"),
                         help="Ruta al JSON de hiperparámetros")
     parser.add_argument("--hidden_dim", type=int,
                         help="Dimensión oculta del modelo (sobrascribe hp_file)")
-    parser.add_argument("--weights_dir", type=str, default="models/weights",
+    parser.add_argument("--weights_dir", type=str, default=str(MODELS_PATH / "weights"),
                         help="Directorio donde se encuentran los pesos y metadatos de los modelos")
     parser.add_argument("--dataset", type=str, default="spiral",
                         help="Nombre o prefijo del dataset (default: spiral)")
-    parser.add_argument("--output_dir", type=str, default="results",
+    parser.add_argument("--output_dir", type=str, default=str(RESULTS_PATH),
                         help="Directorio de salida para los resultados JSON")
+                        
+    parser.add_argument("--rk_tau", type=float, default=0.03,
+                        help="Escala de perturbación para Residual Knowledge (default: 0.03)")
+    parser.add_argument("--rk_c", type=int, default=100,
+                        help="Número de perturbaciones Monte Carlo para Residual Knowledge (default: 100)")
+    parser.add_argument("--rk_chunk_size", type=int, default=100,
+                        help="Tamaño de lote para evaluaciones vectorizadas de RK (default: 100)")
                         
     args = parser.parse_args()
     
@@ -403,5 +507,8 @@ if __name__ == "__main__":
         hp=hp,
         output_dir=args.output_dir,
         weights_dir=args.weights_dir,
-        dataset=args.dataset
+        dataset=args.dataset,
+        rk_tau=args.rk_tau,
+        rk_c=args.rk_c,
+        rk_chunk_size=args.rk_chunk_size
     )

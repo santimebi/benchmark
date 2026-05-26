@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from utils.config import DATASETS_PATH
+from utils.config import DATASETS_PATH, DATA_PATH
 
 
 def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
@@ -34,7 +34,7 @@ def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
         transforms.ToTensor(), # Convierte a [0, 1] y shape (C, H, W)
     ])
     
-    cifar10_dir = Path('./data/cifar-10-batches-py')
+    cifar10_dir = DATA_PATH / 'cifar-10-batches-py'
     if download:
         if cifar10_dir.exists() and any(cifar10_dir.iterdir()):
             print("CIFAR-10 ya está descargado localmente. Omitiendo descarga...")
@@ -43,8 +43,8 @@ def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
             print("Iniciando descarga...")
 
     print("Cargando CIFAR-10 desde torchvision...")
-    cifar_train = torchvision.datasets.CIFAR10(root='./data', train=True, download=download, transform=transform)
-    cifar_test = torchvision.datasets.CIFAR10(root='./data', train=False, download=download, transform=transform)
+    cifar_train = torchvision.datasets.CIFAR10(root=str(DATA_PATH), train=True, download=download, transform=transform)
+    cifar_test = torchvision.datasets.CIFAR10(root=str(DATA_PATH), train=False, download=download, transform=transform)
     
     # Combinar todas las muestras disponibles
     all_images = []

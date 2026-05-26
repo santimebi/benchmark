@@ -21,11 +21,11 @@ import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 import optuna
 
-from utils.config import DATASETS_PATH
+from utils.config import DATASETS_PATH, MODELS_PATH
 from utils.hp_spaces import HP_SPACES
 from utils.protocols import get_protocol
 
-WEIGHTS_DIR = Path("models/weights")
+WEIGHTS_DIR = MODELS_PATH / "weights"
 
 
 
@@ -154,7 +154,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         # Optimización para desaprendizaje (Unlearning)
         # ──────────────────────────────────────────────
         # Cargar el hidden_dim óptimo del modelo base desde models/best_hp.json
-        best_base_hp = load_best_hp(Path("models/best_hp.json"))
+        best_base_hp = load_best_hp(MODELS_PATH / "best_hp.json")
         hidden_dim = best_base_hp.get("hidden_dim", 64)
         base_batch_size = best_base_hp.get("batch_size", 16)
         
@@ -322,7 +322,7 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset
     suggested_params = dict(best.params)
     if protocol in ["cfk", "euk"]:
         suggested_params["epochs"] = 20
-        best_base_hp = load_best_hp(Path("models/best_hp.json"))
+        best_base_hp = load_best_hp(MODELS_PATH / "best_hp.json")
         suggested_params["hidden_dim"] = best_base_hp.get("hidden_dim", 64)
         
     # Guardar a JSON

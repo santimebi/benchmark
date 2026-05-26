@@ -8,6 +8,7 @@ from results/cfk_metrics.json and results/euk_metrics.json.
 import json
 import argparse
 from pathlib import Path
+from utils.config import RESULTS_PATH
 
 def format_acc(mean, std):
     return f"{mean * 100:.2f}% ± {std * 100:.2f}%"
@@ -18,13 +19,30 @@ def format_time(mean, std):
 def format_ratio(mean, std):
     return f"{mean:.4f} ± {std:.4f}"
 
+def format_rk(mean, std):
+    if mean is None or std is None:
+        return "NaN"
+    if isinstance(mean, str) and mean.lower() == "nan":
+        return "NaN"
+    if isinstance(std, str) and std.lower() == "nan":
+        return "NaN"
+    try:
+        import math
+        f_mean = float(mean)
+        f_std = float(std)
+        if math.isnan(f_mean) or math.isnan(f_std):
+            return "NaN"
+        return f"{f_mean:.4f} ± {f_std:.4f}"
+    except (ValueError, TypeError):
+        return "NaN"
+
 def main():
     parser = argparse.ArgumentParser(description="Generate a markdown table of results.")
-    parser.add_argument("--cfk_file", type=str, default="results/cfk_metrics.json",
+    parser.add_argument("--cfk_file", type=str, default=str(RESULTS_PATH / "cfk_metrics.json"),
                         help="Path to CFK metrics JSON file")
-    parser.add_argument("--euk_file", type=str, default="results/euk_metrics.json",
+    parser.add_argument("--euk_file", type=str, default=str(RESULTS_PATH / "euk_metrics.json"),
                         help="Path to EUK metrics JSON file")
-    parser.add_argument("--output_file", type=str, default="results/metrics_table.md",
+    parser.add_argument("--output_file", type=str, default=str(RESULTS_PATH / "metrics_table.md"),
                         help="Path to save the generated Markdown table")
     args = parser.parse_args()
 
@@ -55,6 +73,7 @@ def main():
             "time": format_time(cfk_agg["base_time"]["mean"], cfk_agg["base_time"]["std"]),
             "rr": format_ratio(cfk_agg["base_RR"]["mean"], cfk_agg["base_RR"]["std"]),
             "tr": format_ratio(cfk_agg["base_TR"]["mean"], cfk_agg["base_TR"]["std"]),
+            "rk": format_rk(cfk_agg["base_RK"]["mean"], cfk_agg["base_RK"]["std"]),
         },
         {
             "name": "**Naive Model**",
@@ -64,6 +83,7 @@ def main():
             "time": format_time(cfk_agg["naive_time"]["mean"], cfk_agg["naive_time"]["std"]),
             "rr": format_ratio(cfk_agg["naive_RR"]["mean"], cfk_agg["naive_RR"]["std"]),
             "tr": format_ratio(cfk_agg["naive_TR"]["mean"], cfk_agg["naive_TR"]["std"]),
+            "rk": format_rk(cfk_agg["naive_RK"]["mean"], cfk_agg["naive_RK"]["std"]),
         },
         {
             "name": "**CFK Unlearning**",
@@ -73,6 +93,7 @@ def main():
             "time": format_time(cfk_agg["unlearned_time"]["mean"], cfk_agg["unlearned_time"]["std"]),
             "rr": format_ratio(cfk_agg["unlearned_RR"]["mean"], cfk_agg["unlearned_RR"]["std"]),
             "tr": format_ratio(cfk_agg["unlearned_TR"]["mean"], cfk_agg["unlearned_TR"]["std"]),
+            "rk": format_rk(cfk_agg["unlearned_RK"]["mean"], cfk_agg["unlearned_RK"]["std"]),
         },
         {
             "name": "**EUK Unlearning**",
@@ -82,16 +103,17 @@ def main():
             "time": format_time(euk_agg["unlearned_time"]["mean"], euk_agg["unlearned_time"]["std"]),
             "rr": format_ratio(euk_agg["unlearned_RR"]["mean"], euk_agg["unlearned_RR"]["std"]),
             "tr": format_ratio(euk_agg["unlearned_TR"]["mean"], euk_agg["unlearned_TR"]["std"]),
+            "rk": format_rk(euk_agg["unlearned_RK"]["mean"], euk_agg["unlearned_RK"]["std"]),
         }
     ]
 
     # Generate Markdown table
     md_lines = []
-    md_lines.append("| Model / Protocol | Retain Accuracy (%) | Forget Accuracy (%) | Test Accuracy (%) | Training Time (s) | Retain Ratio (RR) | Time Ratio (TR) |")
-    md_lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+    md_lines.append("| Model / Protocol | Retain Accuracy (%) | Forget Accuracy (%) | Test Accuracy (%) | Training Time (s) | Retain Ratio (RR) | Time Ratio (TR) | Residual Knowledge (RK) |")
+    md_lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
     for row in table_data:
         md_lines.append(
-            f"| {row['name']} | {row['retain']} | {row['forget']} | {row['test']} | {row['time']} | {row['rr']} | {row['tr']} |"
+            f"| {row['name']} | {row['retain']} | {row['forget']} | {row['test']} | {row['time']} | {row['rr']} | {row['tr']} | {row['rk']} |"
         )
 
     md_table = "\n".join(md_lines) + "\n"

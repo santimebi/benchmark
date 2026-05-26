@@ -8,6 +8,7 @@ hiperparámetros (Optuna).
 from pathlib import Path
 from typing import Dict, Any
 import optuna
+from utils.config import MODELS_PATH
 
 HP_SPACES: Dict[str, Dict[str, Any]] = {
     "standard": {
@@ -18,7 +19,7 @@ HP_SPACES: Dict[str, Dict[str, Any]] = {
             "epochs": trial.suggest_int("epochs", 50, 300, step=50),
         },
         "objective_type": "val_loss",
-        "output_path": Path("models/best_hp.json"),
+        "output_path": MODELS_PATH / "best_hp.json",
     },
     "cfk": {
         "suggest_fn": lambda trial, model_arch="": {
@@ -27,7 +28,7 @@ HP_SPACES: Dict[str, Dict[str, Any]] = {
             "epochs": 20,  # Fijo a 20 épocas para el desaprendizaje
         },
         "objective_type": "unlearning_loss",
-        "output_path": Path("models/best_cfk_hp.json"),
+        "output_path": MODELS_PATH / "best_cfk_hp.json",
     },
     "euk": {
         "suggest_fn": lambda trial, model_arch="": {
@@ -36,6 +37,6 @@ HP_SPACES: Dict[str, Dict[str, Any]] = {
             "epochs": 20,  # Fijo a 20 épocas para el desaprendizaje
         },
         "objective_type": "unlearning_loss",
-        "output_path": Path("models/best_euk_hp.json"),
+        "output_path": MODELS_PATH / "best_euk_hp.json",
     }
 }

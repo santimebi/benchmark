@@ -26,9 +26,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 
-from utils.config import DATASETS_PATH
+from utils.config import DATASETS_PATH, MODELS_PATH
 
-WEIGHTS_DIR = Path("models/weights")
+WEIGHTS_DIR = MODELS_PATH / "weights"
 
 
 def load_class(class_path: str):
@@ -270,7 +270,7 @@ if __name__ == "__main__":
                         help="Splits separados por comas a incluir en el entrenamiento (ej. retain,forget)")
     parser.add_argument("--model_name", type=str, default="base", 
                         help="Prefijo para nombrar el archivo de pesos resultante")
-    parser.add_argument("--hp_file", type=str, default="models/best_hp.json", 
+    parser.add_argument("--hp_file", type=str, default=str(MODELS_PATH / "best_hp.json"), 
                         help="Ruta al archivo JSON de mejores hiperparámetros")
     parser.add_argument("--epochs", type=int, help="Número de épocas de entrenamiento (sobrescribe hp_file)")
     parser.add_argument("--batch_size", type=int, help="Tamaño de batch (sobrescribe hp_file)")

@@ -3,6 +3,7 @@ import sys
 import subprocess
 import time
 from pathlib import Path
+from utils.config import MODELS_PATH
 
 
 def run_command(cmd, desc):
@@ -32,6 +33,12 @@ def main():
                         help="Número de trials de optimización Optuna")
     parser.add_argument("--seeds", type=str, default="0,1,2",
                         help="Semillas separadas por comas")
+    parser.add_argument("--rk_tau", type=float, default=0.03,
+                        help="Escala de perturbación para Residual Knowledge (default: 0.03)")
+    parser.add_argument("--rk_c", type=int, default=100,
+                        help="Número de perturbaciones Monte Carlo para Residual Knowledge (default: 100)")
+    parser.add_argument("--rk_chunk_size", type=int, default=100,
+                        help="Tamaño de lote para evaluaciones vectorizadas de RK (default: 100)")
     args = parser.parse_args()
 
     print(f"Iniciando pipeline completo del Benchmark con {args.dataset} y {args.model_arch}...\n")
@@ -74,8 +81,8 @@ def main():
     run_command(
         [py, "3_train_model.py", "--model_arch", args.model_arch, "--protocol", "cfk",
          "--train_splits", "retain", "--model_name", "cfk", "--dataset", args.dataset, 
-         "--pretrained_weights", "models/weights/base_model_seed_{seed}.pth", 
-         "--hp_file", "models/best_cfk_hp.json", "--seeds", args.seeds],
+         "--pretrained_weights", str(MODELS_PATH / "weights/base_model_seed_{seed}.pth"), 
+         "--hp_file", str(MODELS_PATH / "best_cfk_hp.json"), "--seeds", args.seeds],
         "Paso 5: Aplicación del protocolo CFK"
     )
 
@@ -90,22 +97,24 @@ def main():
     run_command(
         [py, "3_train_model.py", "--model_arch", args.model_arch, "--protocol", "euk",
          "--train_splits", "retain", "--model_name", "euk", "--dataset", args.dataset, 
-         "--pretrained_weights", "models/weights/base_model_seed_{seed}.pth", 
-         "--hp_file", "models/best_euk_hp.json", "--seeds", args.seeds],
+         "--pretrained_weights", str(MODELS_PATH / "weights/base_model_seed_{seed}.pth"), 
+         "--hp_file", str(MODELS_PATH / "best_euk_hp.json"), "--seeds", args.seeds],
         "Paso 7: Aplicación del protocolo EUK"
     )
 
     # 8. Evaluación de métricas para CFK
     run_command(
         [py, "4_metricas.py", "--unlearned_name", "cfk", "--model_arch", args.model_arch, 
-         "--dataset", args.dataset, "--seeds", args.seeds],
+         "--dataset", args.dataset, "--seeds", args.seeds,
+         "--rk_tau", str(args.rk_tau), "--rk_c", str(args.rk_c), "--rk_chunk_size", str(args.rk_chunk_size)],
         "Paso 8: Evaluación de métricas para el protocolo CFK"
     )
 
     # 9. Evaluación de métricas para EUK
     run_command(
         [py, "4_metricas.py", "--unlearned_name", "euk", "--model_arch", args.model_arch, 
-         "--dataset", args.dataset, "--seeds", args.seeds],
+         "--dataset", args.dataset, "--seeds", args.seeds,
+         "--rk_tau", str(args.rk_tau), "--rk_c", str(args.rk_c), "--rk_chunk_size", str(args.rk_chunk_size)],
         "Paso 9: Evaluación de métricas para el protocolo EUK"
     )
 
