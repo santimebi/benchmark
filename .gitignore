@@ -7,3 +7,6 @@ datasets/
 models/weights/
 results/
 data/
+
+# Hyperparameters generated during pipeline
+models/best_*.json
