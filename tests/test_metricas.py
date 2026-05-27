@@ -265,7 +265,7 @@ class FlexibleModel(nn.Module):
         cls = int(torch.round(self.pred_class).item())
         # Asegurar que está en rango
         cls = max(0, min(2, cls))
-        out = torch.zeros(x.size(0), 3)
+        out = torch.zeros(x.size(0), 3, device=x.device)
         out[:, cls] = 10.0
         return out
 
