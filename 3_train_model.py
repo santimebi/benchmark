@@ -131,7 +131,7 @@ def train_model(
     if hp is None:
         hp = {}
         
-    epochs = hp.get("epochs", 150)
+    epochs = hp.get("epochs", 300)
     batch_size = hp.get("batch_size", 32)
     lr = hp.get("lr", 1e-3)
     hidden_dim = hp.get("hidden_dim", 16)
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     
     # Combinar valores del fichero con los argumentos explícitos de CLI
     hp = {
-        "epochs": args.epochs if args.epochs is not None else best_hp.get("epochs", 150),
+        "epochs": args.epochs if args.epochs is not None else best_hp.get("epochs", 300),
         "batch_size": args.batch_size if args.batch_size is not None else best_hp.get("batch_size", 32),
         "lr": args.lr if args.lr is not None else best_hp.get("lr", 1e-3),
         "hidden_dim": args.hidden_dim if args.hidden_dim is not None else best_hp.get("hidden_dim", 16),

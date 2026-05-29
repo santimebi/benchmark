@@ -123,6 +123,9 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=lr)
         
+        from utils.protocols import EarlyStopping
+        early_stopper = EarlyStopping(patience=20, verbose=False)
+
         # Bucle de entrenamiento con reporting de pérdida de validación para pruning
         for epoch in range(epochs):
             model.train()
@@ -146,6 +149,12 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
             trial.report(val_loss, epoch)
             if trial.should_prune():
                 raise optuna.TrialPruned()
+
+            early_stopper(val_loss, model, epoch)
+            if early_stopper.early_stop:
+                model.load_state_dict(early_stopper.best_weights)
+                val_loss = early_stopper.best_loss
+                break
                 
         return val_loss
 

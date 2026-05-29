@@ -490,5 +490,103 @@ def test_resnet_training_option_b_unfreezing(tmp_path, weights_dir):
             assert not torch.all(param == 0.0), f"{name} weights should not be zeroed out in EUK"
 
 
+def test_early_stopping_class():
+    from utils.protocols import EarlyStopping
+    import torch.nn as nn
+    import torch
+
+    model = nn.Linear(2, 2)
+    with torch.no_grad():
+        model.weight.fill_(1.0)
+
+    # Instantiate early stopping with patience 2
+    early_stopper = EarlyStopping(patience=2, min_delta=0.0, verbose=False)
+
+    # Epoch 0: initial loss
+    early_stopper(0.5, model, 0)
+    assert not early_stopper.early_stop
+    assert early_stopper.best_loss == 0.5
+    assert torch.all(early_stopper.best_weights["weight"] == 1.0)
+
+    # Modify weights
+    with torch.no_grad():
+        model.weight.fill_(2.0)
+
+    # Epoch 1: loss decreases (improvement!)
+    early_stopper(0.4, model, 1)
+    assert not early_stopper.early_stop
+    assert early_stopper.best_loss == 0.4
+    assert torch.all(early_stopper.best_weights["weight"] == 2.0)
+
+    # Modify weights
+    with torch.no_grad():
+        model.weight.fill_(3.0)
+
+    # Epoch 2: loss increases (no improvement)
+    early_stopper(0.45, model, 2)
+    assert not early_stopper.early_stop
+    assert early_stopper.counter == 1
+    assert early_stopper.best_loss == 0.4
+
+    # Epoch 3: loss remains bad -> reaches patience 2 (triggers stop)
+    early_stopper(0.45, model, 3)
+    assert early_stopper.early_stop
+    assert early_stopper.counter == 2
+
+
+def test_standard_training_early_stopping(fake_dataset):
+    from utils.protocols import run_standard_training
+    from torch.utils.data import TensorDataset, DataLoader
+    import torch.nn as nn
+    import torch
+
+    X = torch.randn(100, 2)
+    y = torch.randint(0, 2, (100,))
+    dataset = TensorDataset(X, y)
+    train_loader = DataLoader(dataset, batch_size=10, shuffle=True)
+    val_loader = DataLoader(dataset, batch_size=100, shuffle=False)
+
+    class BadModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(2, 2)
+        def forward(self, x):
+            return self.linear(x)
+
+    model_bad = BadModel()
+    
+    # Mock criterion to return predefined increasing losses during validation
+    ce = nn.CrossEntropyLoss()
+    losses = [0.1, 0.2, 0.3, 0.4, 0.5]
+    call_idx = 0
+    def mock_criterion(outputs, targets):
+        nonlocal call_idx
+        if model_bad.training:
+            return ce(outputs, targets)
+        else:
+            loss_val = torch.tensor(losses[min(call_idx, len(losses)-1)])
+            call_idx += 1
+            return loss_val
+
+    opt = torch.optim.Adam(model_bad.parameters(), lr=0.01)
+    
+    # Patience is 2. Epoch 0: val loss = 0.1. Epoch 1: val loss = 0.2. Epoch 2: val loss = 0.3 (stop)
+    run_standard_training(
+        model=model_bad,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        criterion=mock_criterion,
+        optimizer=opt,
+        epochs=50,
+        device=torch.device("cpu"),
+        verbose=True,
+        hp={"patience": 2}
+    )
+    
+    # Epoch 0 (call_idx=1), Epoch 1 (call_idx=2), Epoch 2 (call_idx=3 -> stops here)
+    assert call_idx == 3, f"Expected validation to run exactly 3 times, but got {call_idx}"
+
+
+
 
 

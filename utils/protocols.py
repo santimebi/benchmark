@@ -12,6 +12,36 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 
+class EarlyStopping:
+    """
+    Early stopping to stop the training when the validation loss does not improve
+    after a certain number of epochs.
+    """
+    def __init__(self, patience: int = 20, min_delta: float = 0.0, verbose: bool = True):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.verbose = verbose
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+        self.best_weights = None
+
+    def __call__(self, val_loss: float, model: nn.Module, epoch: int):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            self.best_weights = copy.deepcopy(model.state_dict())
+        elif val_loss > self.best_loss - self.min_delta:
+            self.counter += 1
+            if self.verbose and self.counter % 5 == 0:
+                print(f"EarlyStopping counter: {self.counter} out of {self.patience}")
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = val_loss
+            self.best_weights = copy.deepcopy(model.state_dict())
+            self.counter = 0
+
+
 def run_standard_training(
     model: nn.Module,
     train_loader: DataLoader,
@@ -20,10 +50,11 @@ def run_standard_training(
     optimizer: torch.optim.Optimizer,
     epochs: int,
     device: torch.device,
-    verbose: bool = True
+    verbose: bool = True,
+    **kwargs
 ) -> nn.Module:
     """
-    Protocolo estándar de entrenamiento supervisado completo.
+    Protocolo estándar de entrenamiento supervisado completo con soporte para Early Stopping.
 
     Args:
         model: El modelo de PyTorch a entrenar.
@@ -34,10 +65,19 @@ def run_standard_training(
         epochs: Número de épocas de entrenamiento.
         device: Dispositivo de ejecución (cpu o cuda).
         verbose: Si es True, imprime las métricas periódicamente.
+        **kwargs: Argumentos adicionales, como 'hp' conteniendo hiperparámetros.
 
     Returns:
         nn.Module: El modelo entrenado.
     """
+    hp = kwargs.get("hp", {})
+    patience = hp.get("patience", 20)
+    min_delta = hp.get("min_delta", 0.0)
+
+    early_stopper = None
+    if patience > 0:
+        early_stopper = EarlyStopping(patience=patience, min_delta=min_delta, verbose=verbose)
+
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
@@ -60,27 +100,34 @@ def run_standard_training(
         train_loss = train_loss / total
         train_acc = 100. * correct / total
         
-        # Validación
-        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            model.eval()
-            val_loss = 0.0
-            val_correct = 0
-            val_total = 0
-            with torch.no_grad():
-                for val_inputs, val_targets in val_loader:
-                    val_inputs, val_targets = val_inputs.to(device), val_targets.to(device)
-                    val_outputs = model(val_inputs)
-                    loss = criterion(val_outputs, val_targets)
-                    val_loss += loss.item() * val_inputs.size(0)
-                    _, val_predicted = val_outputs.max(1)
-                    val_total += val_targets.size(0)
-                    val_correct += val_predicted.eq(val_targets).sum().item()
-                
-            val_loss = val_loss / val_total if val_total > 0 else 0.0
-            val_acc = 100. * val_correct / val_total if val_total > 0 else 0.0
-                
-            if verbose:
-                print(f"Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+        # Validación en cada época para early stopping
+        model.eval()
+        val_loss = 0.0
+        val_correct = 0
+        val_total = 0
+        with torch.no_grad():
+            for val_inputs, val_targets in val_loader:
+                val_inputs, val_targets = val_inputs.to(device), val_targets.to(device)
+                val_outputs = model(val_inputs)
+                loss = criterion(val_outputs, val_targets)
+                val_loss += loss.item() * val_inputs.size(0)
+                _, val_predicted = val_outputs.max(1)
+                val_total += val_targets.size(0)
+                val_correct += val_predicted.eq(val_targets).sum().item()
+            
+        val_loss = val_loss / val_total if val_total > 0 else 0.0
+        val_acc = 100. * val_correct / val_total if val_total > 0 else 0.0
+            
+        if verbose and ((epoch + 1) % 10 == 0 or epoch == epochs - 1):
+            print(f"Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+
+        if early_stopper is not None:
+            early_stopper(val_loss, model, epoch)
+            if early_stopper.early_stop:
+                if verbose:
+                    print(f"EarlyStopping activado en la época {epoch+1}. Restaurando mejores pesos (val_loss mínimo: {early_stopper.best_loss:.4f}).")
+                model.load_state_dict(early_stopper.best_weights)
+                break
 
     return model
 
