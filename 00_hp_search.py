@@ -332,10 +332,12 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset
     # (Por ejemplo, en CFK epochs es fijo a 20 y usa el hidden_dim de la base)
     suggested_params = dict(best.params)
     if protocol in ["cfk", "euk", "cfgk", "rurk"]:
-        if protocol != "rurk":
-            suggested_params["epochs"] = 20
-        else:
+        if protocol == "cfgk":
+            suggested_params["epochs"] = 10
+        elif protocol == "rurk":
             suggested_params["epochs"] = 2
+        else:
+            suggested_params["epochs"] = 20
         best_base_hp = load_best_hp(MODELS_PATH / "best_hp.json")
         suggested_params["hidden_dim"] = best_base_hp.get("hidden_dim", 64)
         
