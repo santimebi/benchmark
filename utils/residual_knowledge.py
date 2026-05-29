@@ -8,6 +8,7 @@ Implementación estricta de la métrica Residual Knowledge (RK) según la especi
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+import math
 
 def compute_residual_knowledge(
     model_unlearned: nn.Module,
@@ -173,3 +174,171 @@ def compute_residual_knowledge(
         "c": c,
         "perturbation": perturbation,
     }
+
+
+@torch.no_grad()
+def compute_RK_micro(
+    unlearned_model: nn.Module,
+    retrained_model: nn.Module,
+    forget_loader: DataLoader,
+    num_perturbations: int = 100,
+    tau: float = 0.1,
+    device: str | torch.device = "cuda",
+    normalize_fn=None,
+    clip_min: float = 0.0,
+    clip_max: float = 1.0,
+    seed: int | None = None,
+) -> dict:
+    """
+    Compute RK_micro over the forget set using Gaussian perturbations.
+
+    RK_micro = total_correct_unlearned / total_correct_retrained
+
+    The metric aggregates counts over all forget samples and all perturbations
+    before taking the ratio. This avoids per-sample zero denominators.
+
+    Parameters
+    ----------
+    unlearned_model:
+        Model after unlearning.
+    retrained_model:
+        Reference model trained from scratch only on the retain set.
+    forget_loader:
+        DataLoader over the forget set. It must return (x, y).
+    num_perturbations:
+        Number of Gaussian perturbations per forget sample.
+    tau:
+        Standard deviation of the Gaussian perturbation.
+    device:
+        Device used for model evaluation.
+    normalize_fn:
+        Optional preprocessing function applied after perturbation and clipping.
+        Use this if the model expects normalized inputs.
+    clip_min, clip_max:
+        Valid input range after perturbation.
+    seed:
+        Optional random seed for reproducible perturbations.
+
+    Returns
+    -------
+    dict
+        Dictionary with RK_micro and diagnostic quantities.
+    """
+    if num_perturbations <= 0:
+        raise ValueError("num_perturbations must be positive.")
+
+    if tau < 0:
+        raise ValueError("tau must be non-negative.")
+
+    device = torch.device(device)
+
+    unlearned_model = unlearned_model.to(device)
+    retrained_model = retrained_model.to(device)
+
+    unlearned_model.eval()
+    retrained_model.eval()
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device=device)
+        generator.manual_seed(seed)
+
+    total_correct_unlearned = 0
+    total_correct_retrained = 0
+    total_perturbations = 0
+    num_forget_samples = 0
+
+    for batch in forget_loader:
+        if len(batch) >= 2:
+            x, y = batch[0], batch[1]
+        else:
+            raise ValueError("forget_loader debe devolver al menos (x, y).")
+
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
+
+        batch_size = x.shape[0]
+        num_forget_samples += batch_size
+
+        for _ in range(num_perturbations):
+            if generator is not None:
+                noise = torch.randn(
+                    x.shape,
+                    device=device,
+                    dtype=x.dtype,
+                    generator=generator,
+                )
+            else:
+                noise = torch.randn_like(x)
+
+            x_perturbed = x + tau * noise
+            # Only clamp if shape indicates an image (feature_shape > 1) to match macro RK
+            if len(x.shape[1:]) > 1:
+                x_perturbed = torch.clamp(x_perturbed, clip_min, clip_max)
+
+            if normalize_fn is not None:
+                x_model = normalize_fn(x_perturbed)
+            else:
+                x_model = x_perturbed
+
+            logits_unlearned = unlearned_model(x_model)
+            logits_retrained = retrained_model(x_model)
+
+            pred_unlearned = logits_unlearned.argmax(dim=1)
+            pred_retrained = logits_retrained.argmax(dim=1)
+
+            total_correct_unlearned += (pred_unlearned == y).sum().item()
+            total_correct_retrained += (pred_retrained == y).sum().item()
+            total_perturbations += batch_size
+
+    if total_perturbations == 0:
+        raise ValueError("forget_loader produced zero samples.")
+
+    if total_correct_retrained > 0:
+        RK_micro = total_correct_unlearned / total_correct_retrained
+        zero_global_denominator = False
+    else:
+        zero_global_denominator = True
+        if total_correct_unlearned > 0:
+            RK_micro = float("inf")
+        else:
+            RK_micro = float("nan")
+
+    RK_micro_smoothed = (
+        (total_correct_unlearned + 0.5)
+        / (total_correct_retrained + 0.5)
+    )
+
+    if math.isfinite(RK_micro):
+        RK_micro_for_objective = RK_micro
+    else:
+        RK_micro_for_objective = RK_micro_smoothed
+
+    RK_micro_excess = max(0.0, RK_micro_for_objective - 1.0)
+    RK_micro_log_excess = max(0.0, math.log(RK_micro_for_objective))
+
+    unlearned_perturbed_accuracy = (
+        total_correct_unlearned / total_perturbations
+    )
+    retrained_perturbed_accuracy = (
+        total_correct_retrained / total_perturbations
+    )
+
+    return {
+        "RK_micro": RK_micro,
+        "RK_micro_smoothed": RK_micro_smoothed,
+        "RK_micro_for_objective": RK_micro_for_objective,
+        "RK_micro_excess": RK_micro_excess,
+        "RK_micro_log_excess": RK_micro_log_excess,
+        "total_correct_unlearned": int(total_correct_unlearned),
+        "total_correct_retrained": int(total_correct_retrained),
+        "total_perturbations": int(total_perturbations),
+        "num_forget_samples": int(num_forget_samples),
+        "num_perturbations_per_sample": int(num_perturbations),
+        "tau": float(tau),
+        "zero_global_denominator": bool(zero_global_denominator),
+        "unlearned_perturbed_accuracy": float(unlearned_perturbed_accuracy),
+        "retrained_perturbed_accuracy": float(retrained_perturbed_accuracy),
+    }
+
+

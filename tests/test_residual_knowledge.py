@@ -11,7 +11,7 @@ import pytest
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from utils.residual_knowledge import compute_residual_knowledge
+from utils.residual_knowledge import compute_residual_knowledge, compute_RK_micro
 
 # ─────────────────────────────────────────────
 # Mock Models for testing
@@ -293,3 +293,314 @@ def test_dimension_compatibility():
     for px in perturbed_inputs:
         assert (px >= 0.0).all()
         assert (px <= 1.0).all()
+
+
+def test_RK_micro_identical_models():
+    """
+    Test 1 — Caso básico con modelos idénticos.
+    """
+    X = torch.zeros(5, 2)
+    y = torch.ones(5, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=2)
+
+    model = AlwaysCorrectModel()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res = compute_RK_micro(
+        unlearned_model=model,
+        retrained_model=model,
+        forget_loader=loader,
+        num_perturbations=50,
+        tau=0.03,
+        device=device,
+        seed=42
+    )
+
+    assert res["total_correct_unlearned"] == 250
+    assert res["total_correct_retrained"] == 250
+    assert res["total_perturbations"] == 250
+    assert res["RK_micro"] == 1.0
+    assert res["RK_micro_excess"] == 0.0
+    assert res["RK_micro_log_excess"] == 0.0
+    assert not res["zero_global_denominator"]
+
+
+def test_RK_micro_basic_ratio():
+    """
+    Test 2 — Caso básico con ratio controlado.
+    M_total = 80, A_total = 40 -> RK_micro = 2.0
+    """
+    class CustomPredictModel(nn.Module):
+        def __init__(self, correct_indices):
+            super().__init__()
+            self.correct_indices = set(correct_indices)
+            self.call_count = 0
+
+        def forward(self, x):
+            batch_size = x.size(0)
+            out = torch.zeros(batch_size, 3, device=x.device)
+            # Para cada elemento del lote, decide si es correcto en base a su call index global
+            for i in range(batch_size):
+                idx = self.call_count
+                if idx in self.correct_indices:
+                    out[i, 1] = 10.0  # Correcto (etiqueta 1)
+                else:
+                    out[i, 0] = 10.0  # Incorrecto (etiqueta 1)
+                self.call_count += 1
+            return out
+
+    # 4 muestras, 20 perturbaciones por muestra -> 80 perturbaciones en total.
+    # Queremos M_total = 80 aciertos (AlwaysCorrect)
+    # Queremos A_total = 40 aciertos (CustomPredictModel con 40 índices correctos)
+    X = torch.zeros(4, 2)
+    y = torch.ones(4, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=4)
+
+    # 40 aciertos de 80. Seleccionamos los primeros 40
+    model_unlearned = AlwaysCorrectModel()
+    model_retrained = CustomPredictModel(correct_indices=range(40))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=20,
+        tau=0.03,
+        device=device,
+        seed=42
+    )
+
+    assert res["total_correct_unlearned"] == 80
+    assert res["total_correct_retrained"] == 40
+    assert res["total_perturbations"] == 80
+    assert res["RK_micro"] == 2.0
+    assert res["RK_micro_excess"] == 1.0
+    import math
+    assert math.isclose(res["RK_micro_log_excess"], math.log(2.0), rel_tol=1e-5)
+    assert not res["zero_global_denominator"]
+
+
+def test_RK_micro_worse_performance():
+    """
+    Test 3 — RK <= 1 no penaliza.
+    M_total = 30, A_total = 60 -> RK_micro = 0.5
+    """
+    class CustomPredictModel(nn.Module):
+        def __init__(self, correct_indices):
+            super().__init__()
+            self.correct_indices = set(correct_indices)
+            self.call_count = 0
+
+        def forward(self, x):
+            batch_size = x.size(0)
+            out = torch.zeros(batch_size, 3, device=x.device)
+            for i in range(batch_size):
+                idx = self.call_count
+                if idx in self.correct_indices:
+                    out[i, 1] = 10.0
+                else:
+                    out[i, 0] = 10.0
+                self.call_count += 1
+            return out
+
+    # 3 muestras, 20 perturbaciones -> 60 perturbaciones en total.
+    # M_total = 30 (Custom con 30 aciertos)
+    # A_total = 60 (AlwaysCorrect con 60 aciertos)
+    X = torch.zeros(3, 2)
+    y = torch.ones(3, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=3)
+
+    model_unlearned = CustomPredictModel(correct_indices=range(30))
+    model_retrained = AlwaysCorrectModel()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=20,
+        tau=0.03,
+        device=device,
+        seed=42
+    )
+
+    assert res["total_correct_unlearned"] == 30
+    assert res["total_correct_retrained"] == 60
+    assert res["RK_micro"] == 0.5
+    assert res["RK_micro_excess"] == 0.0
+    assert res["RK_micro_log_excess"] == 0.0
+    assert not res["zero_global_denominator"]
+
+
+def test_RK_micro_zero_denominator_positive_numerator():
+    """
+    Test 4 — Denominador global cero con numerador positivo.
+    M_total = 10, A_total = 0 -> RK_micro = inf, smoothed = 21.0
+    """
+    X = torch.zeros(2, 2)
+    y = torch.ones(2, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=2)
+
+    # 2 muestras, 5 perturbaciones -> 10 perturbaciones total.
+    # M_total = 10, A_total = 0.
+    model_unlearned = AlwaysCorrectModel()
+    model_retrained = AlwaysWrongModel()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=5,
+        tau=0.03,
+        device=device,
+        seed=42
+    )
+
+    assert res["total_correct_unlearned"] == 10
+    assert res["total_correct_retrained"] == 0
+    assert res["RK_micro"] == float("inf")
+    assert res["RK_micro_smoothed"] == 21.0
+    assert res["RK_micro_for_objective"] == 21.0
+    assert res["zero_global_denominator"]
+
+
+def test_RK_micro_zero_denominator_zero_numerator():
+    """
+    Test 5 — Denominador global cero con numerador cero.
+    M_total = 0, A_total = 0 -> RK_micro = nan, smoothed = 1.0
+    """
+    X = torch.zeros(2, 2)
+    y = torch.ones(2, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=2)
+
+    model_unlearned = AlwaysWrongModel()
+    model_retrained = AlwaysWrongModel()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=5,
+        tau=0.03,
+        device=device,
+        seed=42
+    )
+
+    assert res["total_correct_unlearned"] == 0
+    assert res["total_correct_retrained"] == 0
+    import math
+    assert math.isnan(res["RK_micro"])
+    assert res["RK_micro_smoothed"] == 1.0
+    assert res["RK_micro_for_objective"] == 1.0
+    assert res["zero_global_denominator"]
+
+
+def test_RK_micro_reproducibility():
+    """
+    Test 6 — Reproducibilidad.
+    """
+    X = torch.zeros(5, 2)
+    y = torch.ones(5, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=5)
+
+    model_unlearned = SignBasedModel()
+    model_retrained = AlwaysCorrectModel()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res1 = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=50,
+        tau=0.03,
+        device=device,
+        seed=777
+    )
+
+    res2 = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=50,
+        tau=0.03,
+        device=device,
+        seed=777
+    )
+
+    res3 = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=50,
+        tau=0.03,
+        device=device,
+        seed=888
+    )
+
+    assert res1["RK_micro"] == res2["RK_micro"]
+    assert res1["total_correct_unlearned"] == res2["total_correct_unlearned"]
+    # Con semillas distintas el ruido gaussiano diferirá y la precisión del modelo basado en signos variará
+    assert res1["total_correct_unlearned"] != res3["total_correct_unlearned"]
+
+
+def test_RK_micro_dimension_compatibility():
+    """
+    Test 7 — Compatibilidad de dimensiones y clipping de imágenes vs no clipping de coordenadas.
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # 1. Coordenadas 2D (no debe clamparse a [0, 1])
+    X_2d = torch.full((2, 2), 5.0)
+    y_2d = torch.ones(2, dtype=torch.long)
+    loader_2d = DataLoader(TensorDataset(X_2d, y_2d), batch_size=2)
+
+    perturbed_inputs = []
+    class CaptureModel(nn.Module):
+        def forward(self, x):
+            perturbed_inputs.append(x.cpu().clone())
+            return torch.zeros(x.size(0), 3, device=x.device)
+
+    model_capture = CaptureModel()
+    compute_RK_micro(
+        unlearned_model=model_capture,
+        retrained_model=model_capture,
+        forget_loader=loader_2d,
+        num_perturbations=10,
+        tau=2.0,
+        device=device,
+        seed=42
+    )
+
+    for px in perturbed_inputs:
+        assert (px > 1.0).any()
+
+    # 2. Imágenes 4D (deben clamparse a [0.0, 1.0])
+    perturbed_inputs.clear()
+    X_4d = torch.full((2, 3, 8, 8), 0.9)
+    y_4d = torch.ones(2, dtype=torch.long)
+    loader_4d = DataLoader(TensorDataset(X_4d, y_4d), batch_size=2)
+
+    compute_RK_micro(
+        unlearned_model=model_capture,
+        retrained_model=model_capture,
+        forget_loader=loader_4d,
+        num_perturbations=10,
+        tau=2.0,
+        device=device,
+        seed=42
+    )
+
+    for px in perturbed_inputs:
+        assert (px >= 0.0).all()
+        assert (px <= 1.0).all()
+
+

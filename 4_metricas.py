@@ -24,7 +24,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from utils.config import DATASETS_PATH, MODELS_PATH, RESULTS_PATH
-from utils.residual_knowledge import compute_residual_knowledge
+from utils.residual_knowledge import compute_residual_knowledge, compute_RK_micro
 
 
 
@@ -283,6 +283,37 @@ def calculate_metrics(
             mc_chunk_size=rk_chunk_size,
         )
 
+        # Calcular RK_micro
+        rk_micro_res_base = compute_RK_micro(
+            unlearned_model=models["base"],
+            retrained_model=models["naive"],
+            forget_loader=forget_loader,
+            num_perturbations=rk_c,
+            tau=rk_tau,
+            device=str(device),
+            seed=seed,
+        )
+        rk_micro_res_naive = compute_RK_micro(
+            unlearned_model=models["naive"],
+            retrained_model=models["naive"],
+            forget_loader=forget_loader,
+            num_perturbations=rk_c,
+            tau=rk_tau,
+            device=str(device),
+            seed=seed,
+        )
+        rk_micro_res_unlearned = compute_RK_micro(
+            unlearned_model=models["unlearned"],
+            retrained_model=models["naive"],
+            forget_loader=forget_loader,
+            num_perturbations=rk_c,
+            tau=rk_tau,
+            device=str(device),
+            seed=seed,
+        )
+
+
+
         # Guardar CSV de sample-level RK para el unlearned model
         import csv
         csv_dir = Path(output_dir)
@@ -315,7 +346,16 @@ def calculate_metrics(
                 "u_counts": rk_res_base["u_counts"],
                 "r_counts": rk_res_base["r_counts"],
                 "rk_tau": rk_res_base["tau"],
-                "rk_c": rk_res_base["c"]
+                "rk_c": rk_res_base["c"],
+                
+                # RK_micro
+                "RK_micro": rk_micro_res_base["RK_micro"],
+                "total_correct_unlearned": rk_micro_res_base["total_correct_unlearned"],
+                "total_correct_retrained": rk_micro_res_base["total_correct_retrained"],
+                "total_perturbations": rk_micro_res_base["total_perturbations"],
+                "unlearned_perturbed_accuracy": rk_micro_res_base["unlearned_perturbed_accuracy"],
+                "retrained_perturbed_accuracy": rk_micro_res_base["retrained_perturbed_accuracy"],
+                "zero_global_denominator": rk_micro_res_base["zero_global_denominator"]
             },
             "naive": {
                 "retain": accs["naive_retain"],
@@ -332,7 +372,16 @@ def calculate_metrics(
                 "u_counts": rk_res_naive["u_counts"],
                 "r_counts": rk_res_naive["r_counts"],
                 "rk_tau": rk_res_naive["tau"],
-                "rk_c": rk_res_naive["c"]
+                "rk_c": rk_res_naive["c"],
+                
+                # RK_micro
+                "RK_micro": rk_micro_res_naive["RK_micro"],
+                "total_correct_unlearned": rk_micro_res_naive["total_correct_unlearned"],
+                "total_correct_retrained": rk_micro_res_naive["total_correct_retrained"],
+                "total_perturbations": rk_micro_res_naive["total_perturbations"],
+                "unlearned_perturbed_accuracy": rk_micro_res_naive["unlearned_perturbed_accuracy"],
+                "retrained_perturbed_accuracy": rk_micro_res_naive["retrained_perturbed_accuracy"],
+                "zero_global_denominator": rk_micro_res_naive["zero_global_denominator"]
             },
             "unlearned": {
                 "retain": accs["unlearned_retain"],
@@ -349,9 +398,20 @@ def calculate_metrics(
                 "u_counts": rk_res_unlearned["u_counts"],
                 "r_counts": rk_res_unlearned["r_counts"],
                 "rk_tau": rk_res_unlearned["tau"],
-                "rk_c": rk_res_unlearned["c"]
+                "rk_c": rk_res_unlearned["c"],
+                
+                # RK_micro
+                "RK_micro": rk_micro_res_unlearned["RK_micro"],
+                "total_correct_unlearned": rk_micro_res_unlearned["total_correct_unlearned"],
+                "total_correct_retrained": rk_micro_res_unlearned["total_correct_retrained"],
+                "total_perturbations": rk_micro_res_unlearned["total_perturbations"],
+                "unlearned_perturbed_accuracy": rk_micro_res_unlearned["unlearned_perturbed_accuracy"],
+                "retrained_perturbed_accuracy": rk_micro_res_unlearned["retrained_perturbed_accuracy"],
+                "zero_global_denominator": rk_micro_res_unlearned["zero_global_denominator"]
             }
         }
+
+
         
         # Almacenar en listas agregadas
         for k_met in metrics_list.keys():
@@ -364,11 +424,13 @@ def calculate_metrics(
                 metrics_list[k_met].append(time_ratios[k_met])
             elif met == "RK":
                 if key == "base":
-                    metrics_list[k_met].append(rk_res_base["rk_tau_forget_set"])
+                    metrics_list[k_met].append(rk_micro_res_base["RK_micro"])
                 elif key == "naive":
-                    metrics_list[k_met].append(rk_res_naive["rk_tau_forget_set"])
+                    metrics_list[k_met].append(rk_micro_res_naive["RK_micro"])
                 elif key == "unlearned":
-                    metrics_list[k_met].append(rk_res_unlearned["rk_tau_forget_set"])
+                    metrics_list[k_met].append(rk_micro_res_unlearned["RK_micro"])
+
+
             else:
                 metrics_list[k_met].append(ratios[k_met])
                 
@@ -376,17 +438,19 @@ def calculate_metrics(
         print(f"  Base Model  | Retain Acc: {accs['base_retain']*100:.2f}% | Forget Acc: {accs['base_forget']*100:.2f}% | Test Acc: {accs['base_test']*100:.2f}%")
         print(f"  --> Ratios  | RR: {ratios['base_RR']:.4f} | RF: {ratios['base_RF']:.4f} | RT: {ratios['base_RT']:.4f}")
         print(f"  --> Tiempo  | Epochs: {metadata_vals['base_epochs']} | Time: {metadata_vals['base_time']:.4f}s | TR: {time_ratios['base_TR']:.4f}")
-        print(f"  --> RK      | RK: {rk_res_base['rk_tau_forget_set']:.4f}")
+        print(f"  --> RK      | RK: {rk_micro_res_base['RK_micro']:.4f}")
         
         print(f"  Naive Model | Retain Acc: {accs['naive_retain']*100:.2f}% | Forget Acc: {accs['naive_forget']*100:.2f}% | Test Acc: {accs['naive_test']*100:.2f}%")
         print(f"  --> Ratios  | RR: {ratios['naive_RR']:.4f} | RF: {ratios['naive_RF']:.4f} | RT: {ratios['naive_RT']:.4f}")
         print(f"  --> Tiempo  | Epochs: {metadata_vals['naive_epochs']} | Time: {metadata_vals['naive_time']:.4f}s | TR: {time_ratios['naive_TR']:.4f}")
-        print(f"  --> RK      | RK: {rk_res_naive['rk_tau_forget_set']:.4f}")
+        print(f"  --> RK      | RK: {rk_micro_res_naive['RK_micro']:.4f}")
         
         print(f"  Unlearned   | Retain Acc: {accs['unlearned_retain']*100:.2f}% | Forget Acc: {accs['unlearned_forget']*100:.2f}% | Test Acc: {accs['unlearned_test']*100:.2f}%")
         print(f"  --> Ratios  | RR: {ratios['unlearned_RR']:.4f} | RF: {ratios['unlearned_RF']:.4f} | RT: {ratios['unlearned_RT']:.4f}")
         print(f"  --> Tiempo  | Epochs: {metadata_vals['unlearned_epochs']} | Time: {metadata_vals['unlearned_time']:.4f}s | TR: {time_ratios['unlearned_TR']:.4f}")
-        print(f"  --> RK      | RK: {rk_res_unlearned['rk_tau_forget_set']:.4f}")
+        print(f"  --> RK      | RK: {rk_micro_res_unlearned['RK_micro']:.4f}")
+
+
 
     # Agregación (Media ± Desviación Estándar)
     for k_met, values in metrics_list.items():
