@@ -160,7 +160,7 @@ class TestSaveAllSplits:
             seeds=seeds, verbose=False, plot_dataset=False,
         )
         for seed in seeds:
-            assert (output_dir / f"spiral_splits_seed_{seed}.npz").exists()
+            assert (output_dir / f"spiral_c0_s0.2_splits_seed_{seed}.npz").exists()
 
     def test_npz_contains_all_keys(self, dummy_spiral_csv, tmp_path):
         """El .npz debe contener las 8 arrays esperadas."""
@@ -169,7 +169,7 @@ class TestSaveAllSplits:
             file_name=dummy_spiral_csv, output_dir=output_dir,
             seeds=[0], verbose=False, plot_dataset=False,
         )
-        data = np.load(output_dir / "spiral_splits_seed_0.npz")
+        data = np.load(output_dir / "spiral_c0_s0.2_splits_seed_0.npz")
         expected = {"X_retain", "y_retain", "X_forget", "y_forget",
                     "X_val", "y_val", "X_test", "y_test"}
         assert expected == set(data.files)

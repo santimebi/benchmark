@@ -316,7 +316,7 @@ def calculate_metrics(
 
         # Guardar CSV de sample-level RK para el unlearned model
         import csv
-        csv_dir = Path(output_dir)
+        csv_dir = Path(output_dir) / dataset
         csv_dir.mkdir(parents=True, exist_ok=True)
         csv_path = csv_dir / f"{unlearned_name}_rk_per_sample_seed_{seed}.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
@@ -496,7 +496,7 @@ def calculate_metrics(
     print("="*80)
     
     # Guardar en archivo JSON
-    out_dir_path = Path(output_dir)
+    out_dir_path = Path(output_dir) / dataset
     out_dir_path.mkdir(parents=True, exist_ok=True)
     out_file = out_dir_path / f"{unlearned_name}_metrics.json"
 

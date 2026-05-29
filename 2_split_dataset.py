@@ -31,6 +31,7 @@ def split_dataset(
             forget_size=0.2,
             random_state=42,
             val_size=0.1,
+            forget_class=0,
             ):
     """
     Divide el dataset espiral en retain, forget, validation y test.
@@ -78,14 +79,14 @@ def split_dataset(
     # Tercera división: del train, sacamos el tamaño de forget (ej. 20%)
     f_size = int(forget_size * len(X_train))
     
-    # Indices de la clase 0 en X_train
-    class_0_indices = np.where(y_train == 0)[0]
+    # Indices de la clase elegida en X_train
+    class_0_indices = np.where(y_train == forget_class)[0]
     
     # Distancia al centro (origen) para ordenar (r=0 es el centro de la espiral, que corresponde a theta=0)
     distances = np.linalg.norm(X_train[class_0_indices], axis=1)
     sorted_class_0_idx = class_0_indices[np.argsort(distances)]
     
-    # Tomamos los primeros 'f_size' elementos de la clase 0 desde el centro
+    # Tomamos los primeros 'f_size' elementos de la clase elegida desde el centro
     forget_indices = sorted_class_0_idx[:f_size]
     
     # El resto de train pasa a ser retain
@@ -115,7 +116,7 @@ def split_dataset(
         
         from matplotlib.lines import Line2D
         custom_lines = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='black', markersize=10, label='Forget (Clase 0)'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='black', markersize=10, label=f'Forget (Clase {forget_class})'),
             Line2D([0], [0], marker='o', color='w', markerfacecolor='#440154', markersize=10, label='Retain (Clase 0)'),
             Line2D([0], [0], marker='o', color='w', markerfacecolor='#21918c', markersize=10, label='Retain (Clase 1)'),
             Line2D([0], [0], marker='o', color='w', markerfacecolor='#fde725', markersize=10, label='Retain (Clase 2)')
@@ -127,11 +128,11 @@ def split_dataset(
     return X_retain, X_forget, X_val, X_test, y_retain, y_forget, y_val, y_test
 
 
-def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False, verbose=True, plot_dataset=False):
+def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False, verbose=True, plot_dataset=False, forget_class=0, forget_size=0.2):
     """
     Genera y guarda los splits del dataset en archivos ``.npz`` para múltiples seeds.
 
-    Cada seed produce un fichero ``spiral_splits_seed_{seed}.npz`` que
+    Cada seed produce un fichero ``spiral_c{forget_class}_s{forget_size}_splits_seed_{seed}.npz`` que
     contiene las 8 arrays del split (X/y para retain, forget, val, test).
 
     Args:
@@ -145,7 +146,7 @@ def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False
     output_dir.mkdir(parents=True, exist_ok=True)
     
     for seed in seeds:
-        output_file = output_dir / f"spiral_splits_seed_{seed}.npz"
+        output_file = output_dir / f"spiral_c{forget_class}_s{forget_size}_splits_seed_{seed}.npz"
         
         if not output_file.exists() or overwrite_file:
             if verbose:
@@ -154,7 +155,9 @@ def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False
                 file_name=file_name,
                 random_state=seed,
                 verbose=verbose,
-                plot_dataset=plot_dataset
+                plot_dataset=plot_dataset,
+                forget_size=forget_size,
+                forget_class=forget_class,
             )
             
             np.savez(
@@ -172,5 +175,23 @@ def save_all_splits(file_name, output_dir, seeds=[0, 1, 2], overwrite_file=False
 
 
 if __name__ == "__main__":
-    seeds_to_use = [0, 1, 2]
-    save_all_splits(DATASETS_PATH / "spiral.csv", DATASETS_PATH, seeds=seeds_to_use, overwrite_file=True, verbose=True, plot_dataset=False)
+    import argparse
+    parser = argparse.ArgumentParser(description="Particionar dataset de espiral con configuración parametrizable.")
+    parser.add_argument("--forget_class", type=int, default=0, help="Clase a olvidar (default: 0)")
+    parser.add_argument("--forget_size", type=float, default=0.2, help="Proporción del train dedicada a forget (default: 0.2)")
+    parser.add_argument("--seeds", type=str, default="0,1,2", help="Semillas separadas por comas (default: 0,1,2)")
+    parser.add_argument("--overwrite", action="store_true", help="Sobrescribe archivos existentes")
+    args = parser.parse_args()
+    
+    seeds_list = [int(s.strip()) for s in args.seeds.split(",")]
+    
+    save_all_splits(
+        file_name=DATASETS_PATH / "spiral.csv",
+        output_dir=DATASETS_PATH,
+        seeds=seeds_list,
+        overwrite_file=args.overwrite,
+        verbose=True,
+        plot_dataset=False,
+        forget_class=args.forget_class,
+        forget_size=args.forget_size
+    )

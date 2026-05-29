@@ -200,7 +200,7 @@ def test_calculate_metrics_integration(tmp_path):
     assert "unlearned_TR" in results["aggregated"]
     
     # Verificar que el JSON se guardó correctamente
-    json_file = output_dir / "cfk_metrics.json"
+    json_file = output_dir / "spiral" / "cfk_metrics.json"
     assert json_file.exists()
     
     with open(json_file, "r", encoding="utf-8") as f:
@@ -248,7 +248,7 @@ def test_calculate_metrics_integration_euk(tmp_path):
     assert "1" in results["per_seed"]
     
     # Verificar que el JSON se guardó correctamente
-    json_file = output_dir / "euk_metrics.json"
+    json_file = output_dir / "spiral" / "euk_metrics.json"
     assert json_file.exists()
     
     with open(json_file, "r", encoding="utf-8") as f:

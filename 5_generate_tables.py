@@ -38,22 +38,26 @@ def format_rk(mean, std):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a markdown table of results.")
-    parser.add_argument("--cfk_file", type=str, default=str(RESULTS_PATH / "cfk_metrics.json"),
+    parser.add_argument("--dataset", type=str, default="spiral",
+                        help="Dataset config name (subdirectory in results/)")
+    parser.add_argument("--cfk_file", type=str, default=None,
                         help="Path to CFK metrics JSON file")
-    parser.add_argument("--euk_file", type=str, default=str(RESULTS_PATH / "euk_metrics.json"),
+    parser.add_argument("--euk_file", type=str, default=None,
                         help="Path to EUK metrics JSON file")
-    parser.add_argument("--cfgk_file", type=str, default=str(RESULTS_PATH / "cfgk_metrics.json"),
+    parser.add_argument("--cfgk_file", type=str, default=None,
                         help="Path to CFGK metrics JSON file")
-    parser.add_argument("--rurk_file", type=str, default=str(RESULTS_PATH / "rurk_metrics.json"),
+    parser.add_argument("--rurk_file", type=str, default=None,
                         help="Path to RURK metrics JSON file")
-    parser.add_argument("--output_file", type=str, default=str(RESULTS_PATH / "metrics_table.md"),
+    parser.add_argument("--output_file", type=str, default=None,
                         help="Path to save the generated Markdown table")
     args = parser.parse_args()
 
-    cfk_path = Path(args.cfk_file)
-    euk_path = Path(args.euk_file)
-    cfgk_path = Path(args.cfgk_file)
-    rurk_path = Path(args.rurk_file)
+    dataset = args.dataset
+    cfk_path = Path(args.cfk_file) if args.cfk_file else RESULTS_PATH / dataset / "cfk_metrics.json"
+    euk_path = Path(args.euk_file) if args.euk_file else RESULTS_PATH / dataset / "euk_metrics.json"
+    cfgk_path = Path(args.cfgk_file) if args.cfgk_file else RESULTS_PATH / dataset / "cfgk_metrics.json"
+    rurk_path = Path(args.rurk_file) if args.rurk_file else RESULTS_PATH / dataset / "rurk_metrics.json"
+    output_path = Path(args.output_file) if args.output_file else RESULTS_PATH / dataset / "metrics_table.md"
 
     if not cfk_path.exists():
         print(f"Error: {cfk_path} not found.")
@@ -157,7 +161,6 @@ def main():
     md_table = "\n".join(md_lines) + "\n"
 
     # Write to output file
-    output_path = Path(args.output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(md_table)

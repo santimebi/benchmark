@@ -33,6 +33,8 @@ def main():
                         help="Nombre del método de desaprendizaje (cfk o euk)")
     parser.add_argument("--model_arch", type=str, default="models.base_nn.BaseMLP",
                         help="Arquitectura del modelo")
+    parser.add_argument("--dataset", type=str, default="spiral",
+                        help="Nombre o prefijo de la configuración del dataset (e.g. spiral, spiral_c0_s0.2)")
     parser.add_argument("--output_path", type=str, default=None,
                         help="Ruta de guardado alternativa")
     args = parser.parse_args()
@@ -67,13 +69,13 @@ def main():
 
     fig, axes = plt.subplots(3, 3, figsize=(15, 15))
     
-    # Asegurar que results/ exista
-    results_dir = RESULTS_PATH
+    # Asegurar que results/{dataset}/ exista
+    results_dir = RESULTS_PATH / args.dataset
     results_dir.mkdir(parents=True, exist_ok=True)
 
     for col_idx, seed in enumerate(seeds):
         # Cargar datos
-        data_path = DATASETS_PATH / f"spiral_splits_seed_{seed}.npz"
+        data_path = DATASETS_PATH / f"{args.dataset}_splits_seed_{seed}.npz"
         if not data_path.exists():
             print(f"Error: No se encontró {data_path}")
             return

@@ -57,7 +57,7 @@ def test_create_cifar_nano_shapes_and_splits(mock_cifar10, tmp_path):
     create_cifar_nano(output_dir=tmp_path, seeds=[0], download=False)
     
     # Comprobar que el archivo se ha creado
-    npz_path = tmp_path / "cifar_nano_splits_seed_0.npz"
+    npz_path = tmp_path / "cifar_nano_c0_n2_splits_seed_0.npz"
     assert npz_path.exists()
     
     # Cargar y verificar el contenido
@@ -94,7 +94,7 @@ def test_create_cifar_nano_class_distribution(mock_cifar10, tmp_path):
     mock_cifar10.side_effect = lambda root, train, download, transform: get_mock_cifar10(train, download, transform)
     
     create_cifar_nano(output_dir=tmp_path, seeds=[0], download=False)
-    data = np.load(tmp_path / "cifar_nano_splits_seed_0.npz")
+    data = np.load(tmp_path / "cifar_nano_c0_n2_splits_seed_0.npz")
     
     y_retain = data["y_retain"]
     y_forget = data["y_forget"]
@@ -132,13 +132,13 @@ def test_create_cifar_nano_reproducibility(mock_cifar10, tmp_path):
     
     create_cifar_nano(output_dir=tmp_path, seeds=[42, 42, 100], download=False)
     
-    data_42_a = np.load(tmp_path / "cifar_nano_splits_seed_42.npz")
+    data_42_a = np.load(tmp_path / "cifar_nano_c0_n2_splits_seed_42.npz")
     # Para el segundo 42, se sobreescribe el mismo fichero, por lo que creamos otra carpeta
     tmp_path_b = tmp_path / "b"
     create_cifar_nano(output_dir=tmp_path_b, seeds=[42], download=False)
-    data_42_b = np.load(tmp_path_b / "cifar_nano_splits_seed_42.npz")
+    data_42_b = np.load(tmp_path_b / "cifar_nano_c0_n2_splits_seed_42.npz")
     
-    data_100 = np.load(tmp_path / "cifar_nano_splits_seed_100.npz")
+    data_100 = np.load(tmp_path / "cifar_nano_c0_n2_splits_seed_100.npz")
     
     # Misma semilla -> Mismo resultado
     np.testing.assert_array_equal(data_42_a["X_retain"], data_42_b["X_retain"])

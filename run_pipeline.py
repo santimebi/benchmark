@@ -25,8 +25,8 @@ def run_command(cmd, desc):
 
 def main():
     parser = argparse.ArgumentParser(description="Script de automatización para ejecutar todo el pipeline del benchmark.")
-    parser.add_argument("--dataset", type=str, default="cifar_nano", choices=["cifar_nano", "spiral", "cifar10"],
-                        help="Nombre del dataset a utilizar (cifar_nano, spiral, o cifar10)")
+    parser.add_argument("--dataset", type=str, default="cifar_nano",
+                        help="Nombre del dataset a utilizar (ej. cifar_nano, spiral_c0_s0.2, cifar10_c7_r0.4)")
     parser.add_argument("--model_arch", type=str, default="models.resnet.ResNet18",
                         help="Import path de la arquitectura del modelo")
     parser.add_argument("--n_trials", type=int, default=5,
@@ -168,7 +168,7 @@ def main():
 
     # 10. Generar tabla de métricas resumida
     run_command(
-        [py, "5_generate_tables.py"],
+        [py, "5_generate_tables.py", "--dataset", args.dataset],
         "Paso 10: Generación y guardado de tabla de métricas"
     )
 

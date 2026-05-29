@@ -59,7 +59,7 @@ def test_create_cifar10_shapes_and_splits(mock_cifar10, tmp_path):
     
     create_cifar10(output_dir=tmp_path, seeds=[0], download=False, forget_class=7, forget_ratio=0.4, val_ratio=0.1)
     
-    npz_path = tmp_path / "cifar10_splits_seed_0.npz"
+    npz_path = tmp_path / "cifar10_c7_r0.4_splits_seed_0.npz"
     assert npz_path.exists()
     
     data = np.load(npz_path)
@@ -91,7 +91,7 @@ def test_create_cifar10_class_distribution(mock_cifar10, tmp_path):
     mock_cifar10.side_effect = lambda root, train, download, transform: get_mock_cifar10(train, download, transform)
     
     create_cifar10(output_dir=tmp_path, seeds=[0], download=False, forget_class=7, forget_ratio=0.4, val_ratio=0.1)
-    data = np.load(tmp_path / "cifar10_splits_seed_0.npz")
+    data = np.load(tmp_path / "cifar10_c7_r0.4_splits_seed_0.npz")
     
     y_retain = data["y_retain"]
     y_forget = data["y_forget"]
@@ -130,13 +130,13 @@ def test_create_cifar10_reproducibility(mock_cifar10, tmp_path):
     
     create_cifar10(output_dir=tmp_path, seeds=[42, 42, 100], download=False, forget_class=7, forget_ratio=0.4, val_ratio=0.1)
     
-    data_42_a = np.load(tmp_path / "cifar10_splits_seed_42.npz")
+    data_42_a = np.load(tmp_path / "cifar10_c7_r0.4_splits_seed_42.npz")
     
     tmp_path_b = tmp_path / "b"
     create_cifar10(output_dir=tmp_path_b, seeds=[42], download=False, forget_class=7, forget_ratio=0.4, val_ratio=0.1)
-    data_42_b = np.load(tmp_path_b / "cifar10_splits_seed_42.npz")
+    data_42_b = np.load(tmp_path_b / "cifar10_c7_r0.4_splits_seed_42.npz")
     
-    data_100 = np.load(tmp_path / "cifar10_splits_seed_100.npz")
+    data_100 = np.load(tmp_path / "cifar10_c7_r0.4_splits_seed_100.npz")
     
     # Misma semilla -> Mismo resultado
     np.testing.assert_array_equal(data_42_a["X_retain"], data_42_b["X_retain"])

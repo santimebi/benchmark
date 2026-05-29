@@ -102,7 +102,7 @@ def create_cifar10(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True, for
         X_retain = X_retain[retain_perm]
         y_retain = y_retain[retain_perm]
         
-        output_file = output_dir / f"cifar10_splits_seed_{seed}.npz"
+        output_file = output_dir / f"cifar10_c{forget_class}_r{forget_ratio}_splits_seed_{seed}.npz"
         np.savez(
             output_file,
             X_retain=X_retain, y_retain=y_retain,
@@ -119,4 +119,20 @@ def create_cifar10(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True, for
         print(f"  Guardado en: {output_file}")
 
 if __name__ == "__main__":
-    create_cifar10(seeds=[0, 1, 2], forget_class=7, forget_ratio=0.4)
+    import argparse
+    parser = argparse.ArgumentParser(description="Generar splits de CIFAR-10 con configuración parametrizable.")
+    parser.add_argument("--forget_class", type=int, default=7, help="Clase a olvidar (default: 7)")
+    parser.add_argument("--forget_ratio", type=float, default=0.4, help="Porcentaje de la clase a olvidar (default: 0.4)")
+    parser.add_argument("--seeds", type=str, default="0,1,2", help="Semillas separadas por comas (default: 0,1,2)")
+    parser.add_argument("--no_download", dest="download", action="store_false", help="Evita la descarga de CIFAR-10")
+    parser.set_defaults(download=True)
+    args = parser.parse_args()
+    
+    seeds_list = [int(s.strip()) for s in args.seeds.split(",")]
+    
+    create_cifar10(
+        seeds=seeds_list,
+        forget_class=args.forget_class,
+        forget_ratio=args.forget_ratio,
+        download=args.download
+    )

@@ -26,7 +26,7 @@ import torchvision.transforms as transforms
 from utils.config import DATASETS_PATH, DATA_PATH
 
 
-def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
+def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True, forget_class=0, forget_count=2):
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # 1. Cargar CIFAR-10 completo (train + test) para tener suficiente variedad
@@ -109,13 +109,13 @@ def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
             test_X_list.append(test_imgs)
             test_y_list.append(test_targets)
             
-            # Si es la clase 0, dividir train_imgs en forget (2) y retain (5)
-            if c == 0:
-                forget_imgs = train_imgs[0:2]
-                forget_targets = train_targets[0:2]
+            # Si es la clase elegida, dividir train_imgs en forget (forget_count) y retain (7 - forget_count)
+            if c == forget_class:
+                forget_imgs = train_imgs[0:forget_count]
+                forget_targets = train_targets[0:forget_count]
                 
-                retain_imgs = train_imgs[2:7]
-                retain_targets = train_targets[2:7]
+                retain_imgs = train_imgs[forget_count:7]
+                retain_targets = train_targets[forget_count:7]
                 
                 forget_X_list.append(forget_imgs)
                 forget_y_list.append(forget_targets)
@@ -153,7 +153,7 @@ def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
         y_test = y_test[test_perm]
         
         # Guardar en archivo npz
-        output_file = output_dir / f"cifar_nano_splits_seed_{seed}.npz"
+        output_file = output_dir / f"cifar_nano_c{forget_class}_n{forget_count}_splits_seed_{seed}.npz"
         np.savez(
             output_file,
             X_retain=X_retain, y_retain=y_retain,
@@ -171,4 +171,20 @@ def create_cifar_nano(output_dir=DATASETS_PATH, seeds=[0, 1, 2], download=True):
 
 
 if __name__ == "__main__":
-    create_cifar_nano(seeds=[0, 1, 2])
+    import argparse
+    parser = argparse.ArgumentParser(description="Generar splits de CIFAR-Nano con configuración parametrizable.")
+    parser.add_argument("--forget_class", type=int, default=0, help="Clase a olvidar (default: 0)")
+    parser.add_argument("--forget_count", type=int, default=2, help="Cantidad de muestras de esa clase a olvidar (default: 2)")
+    parser.add_argument("--seeds", type=str, default="0,1,2", help="Semillas separadas por comas (default: 0,1,2)")
+    parser.add_argument("--no_download", dest="download", action="store_false", help="Evita la descarga de CIFAR-10")
+    parser.set_defaults(download=True)
+    args = parser.parse_args()
+    
+    seeds_list = [int(s.strip()) for s in args.seeds.split(",")]
+    
+    create_cifar_nano(
+        seeds=seeds_list,
+        forget_class=args.forget_class,
+        forget_count=args.forget_count,
+        download=args.download
+    )
