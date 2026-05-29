@@ -602,3 +602,34 @@ def test_RK_micro_dimension_compatibility():
         assert (px <= 1.0).all()
 
 
+def test_RK_micro_zero_numerator_positive_denominator():
+    """
+    Test 8 — Numerador global cero con denominador positivo.
+    M_total = 0, A_total = 10 -> RK_micro = 0.0, log_excess = 0.0 (no crash)
+    """
+    X = torch.zeros(2, 2)
+    y = torch.ones(2, dtype=torch.long)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=2)
+
+    model_unlearned = AlwaysWrongModel()
+    model_retrained = AlwaysCorrectModel()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    res = compute_RK_micro(
+        unlearned_model=model_unlearned,
+        retrained_model=model_retrained,
+        forget_loader=loader,
+        num_perturbations=5,
+        tau=0.03,
+        device=device,
+        seed=42
+    )
+
+    assert res["total_correct_unlearned"] == 0
+    assert res["total_correct_retrained"] == 10
+    assert res["RK_micro"] == 0.0
+    assert res["RK_micro_excess"] == 0.0
+    assert res["RK_micro_log_excess"] == 0.0
+
+

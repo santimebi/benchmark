@@ -318,7 +318,10 @@ def compute_RK_micro(
         RK_micro_for_objective = RK_micro_smoothed
 
     RK_micro_excess = max(0.0, RK_micro_for_objective - 1.0)
-    RK_micro_log_excess = max(0.0, math.log(RK_micro_for_objective))
+    if RK_micro_for_objective > 1.0:
+        RK_micro_log_excess = math.log(RK_micro_for_objective)
+    else:
+        RK_micro_log_excess = 0.0
 
     unlearned_perturbed_accuracy = (
         total_correct_unlearned / total_perturbations
