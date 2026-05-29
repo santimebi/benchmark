@@ -186,11 +186,11 @@ def compute_RK_micro(
     forget_loader: DataLoader,
     num_perturbations: int = 100,
     tau: float = 0.1,
-    device: str | torch.device = "cuda",
+    device = "cuda",
     normalize_fn=None,
     clip_min: float = 0.0,
     clip_max: float = 1.0,
-    seed: int | None = None,
+    seed = None,
 ) -> dict:
     """
     Compute RK_micro over the forget set using Gaussian perturbations.
