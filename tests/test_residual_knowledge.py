@@ -104,10 +104,9 @@ def test_extreme_case_undefined_ratio():
     assert all(r == 0 for r in res["r_counts"])
     assert all(u == 10 for u in res["u_counts"])
     
-    # Each sample's RK must be NaN (as r_i = 0)
-    import math
-    assert all(math.isnan(val) for val in res["rk_tau_per_sample"])
-    assert math.isnan(res["rk_tau_forget_set"])
+    # Each sample's RK must be infinity (as r_i = 0, u_i > 0)
+    assert all(val == float("inf") for val in res["rk_tau_per_sample"])
+    assert res["rk_tau_forget_set"] == float("inf")
 
 
 def test_extreme_case_zero_zero():
@@ -138,9 +137,9 @@ def test_extreme_case_zero_zero():
     assert all(r == 0 for r in res["r_counts"])
     assert all(u == 0 for u in res["u_counts"])
     
-    import math
-    assert all(math.isnan(val) for val in res["rk_tau_per_sample"])
-    assert math.isnan(res["rk_tau_forget_set"])
+    # Each sample's RK must be 1.0 (as r_i = 0, u_i = 0)
+    assert all(val == 1.0 for val in res["rk_tau_per_sample"])
+    assert res["rk_tau_forget_set"] == 1.0
 
 
 def test_unlearned_performs_worse():
@@ -496,8 +495,7 @@ def test_RK_micro_zero_denominator_zero_numerator():
 
     assert res["total_correct_unlearned"] == 0
     assert res["total_correct_retrained"] == 0
-    import math
-    assert math.isnan(res["RK_micro"])
+    assert res["RK_micro"] == 1.0
     assert res["RK_micro_smoothed"] == 1.0
     assert res["RK_micro_for_objective"] == 1.0
     assert res["zero_global_denominator"]

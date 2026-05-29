@@ -156,7 +156,10 @@ def compute_residual_knowledge(
             if r_i > 0:
                 rk_values.append(u_i / r_i)
             else:
-                rk_values.append(float("nan"))
+                if u_i == 0:
+                    rk_values.append(1.0)
+                else:
+                    rk_values.append(float("inf"))
 
     rk_tensor = torch.tensor(rk_values, dtype=torch.float64)
 
@@ -302,7 +305,7 @@ def compute_RK_micro(
         if total_correct_unlearned > 0:
             RK_micro = float("inf")
         else:
-            RK_micro = float("nan")
+            RK_micro = 1.0
 
     RK_micro_smoothed = (
         (total_correct_unlearned + 0.5)
