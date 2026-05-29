@@ -1,194 +1,119 @@
-# 📋 Documentación Funcional — Pipeline del Benchmark
+# 📋 Guía del Pipeline del Benchmark de Machine Unlearning
 
-## Visión General
+Esta documentación sirve como punto de partida para nuevos usuarios. En ella se detalla cómo estructurar, ejecutar y evaluar las técnicas de desaprendizaje (**Machine Unlearning**) disponibles en el benchmark.
 
-Este benchmark implementa un pipeline completo para evaluar técnicas de
-**machine unlearning** sobre un dataset sintético de espirales entrelazadas.
-El objetivo es entrenar un modelo base, definir un subconjunto de datos a
-"olvidar" (forget set), y posteriormente aplicar y evaluar métodos de
-unlearning.
+---
 
-## Arquitectura del Proyecto
+## 🚀 Inicio Rápido (Método Recomendado)
 
+La forma más sencilla de ejecutar todo el flujo del benchmark (generar hiperparámetros, entrenar modelos base/naive, aplicar desaprendizaje y evaluar métricas) es utilizando el script automatizador `run_pipeline.py`.
+
+### 1. Preparar el Dataset
+Antes de ejecutar el pipeline, debes generar los splits del dataset deseado. Ejecuta uno de los siguientes scripts según el caso:
+
+*   **Para Espiral (Sintético 2D):**
+    ```bash
+    python 1_create_spiral.py
+    python 2_split_dataset.py
+    ```
+*   **Para CIFAR-Nano (Subconjunto ligero de CIFAR-10, 100 imágenes):**
+    ```bash
+    python 1_create_cifar_nano.py
+    ```
+*   **Para CIFAR-10 completo (50,000 imágenes):**
+    ```bash
+    python 1_create_cifar10.py
+    ```
+
+### 2. Lanzar el Pipeline Completo
+Una vez creados los splits, puedes ejecutar todo el flujo con un único comando.
+
+*   **Ejemplo con el dataset `spiral` (Modelo MLP simple):**
+    ```bash
+    python run_pipeline.py --dataset spiral --model_arch models.base_nn.BaseMLP --n_trials 20 --seeds 0,1,2
+    ```
+*   **Ejemplo con el dataset `cifar_nano` (Modelo ResNet18):**
+    ```bash
+    python run_pipeline.py --dataset cifar_nano --model_arch models.resnet.ResNet18 --n_trials 5 --seeds 0,1,2
+    ```
+
+Este script ejecutará secuencialmente la búsqueda de hiperparámetros con Optuna, el entrenamiento de los modelos de base y de referencia (naive), la aplicación de los algoritmos de unlearning (`cfk`, `cfgk`, `euk`, `rurk`), la evaluación de las métricas (incluyendo RK y RK_micro) y finalmente la generación de la tabla resumen.
+
+---
+
+## 🛠️ Ejecución Paso a Paso (Manual)
+
+Si prefieres ejecutar cada paso manualmente o depurar partes específicas del flujo:
+
+### Paso 1: Búsqueda de Hiperparámetros (`00_hp_search.py`)
+Optimiza los hiperparámetros del entrenamiento estándar u optimiza los parámetros específicos de desaprendizaje con **Optuna**.
+```bash
+# Optimización de hiperparámetros de entrenamiento
+python 00_hp_search.py --protocol standard --dataset spiral --model_arch models.base_nn.BaseMLP --n_trials 30
+
+# Optimización de hiperparámetros para desaprendizaje CFK
+python 00_hp_search.py --protocol cfk --dataset spiral --model_arch models.base_nn.BaseMLP --n_trials 30
 ```
-benchmark/
-├── doc/
-│   └── pipeline.md              ← Este documento
-├── models/
-│   ├── base_nn.py               ← Definición del modelo BaseMLP
-│   ├── weights/                 ← Pesos entrenados (.pth)
-│   ├── best_hp.json             ← Mejores HP entrenamiento estándar (generado)
-│   └── best_cfk_hp.json         ← Mejores HP desaprendizaje CFK (generado)
-├── tests/
-│   ├── conftest.py              ← Configuración compartida de pytest
-│   ├── test_base_nn.py          ← Tests del modelo
-│   ├── test_create_spiral.py    ← Tests de generación del dataset
-│   ├── test_split_dataset.py    ← Tests de partición
-│   ├── test_hp_search.py        ← Tests de la búsqueda generalizada de HP
-│   ├── test_train_model.py      ← Tests del entrenamiento y unlearning
-│   └── test_metricas.py         ← Tests del cálculo de métricas (RR/RF/RT)
-├── utils/
-│   ├── config.py                ← Configuración centralizada (rutas)
-│   ├── hp_spaces.py             ← Registro de espacios de búsqueda Optuna
-│   └── protocols.py             ← Protocolos de entrenamiento/olvido
-├── datasets/                    ← Datos generados (CSV, NPZ)
-├── results/                     ← Métricas en formato JSON (generado)
-├── 1_create_spiral.py           ← Paso 1: Generar dataset
-├── 2_split_dataset.py           ← Paso 2: Particionar dataset
-├── 00_hp_search.py              ← Paso 2.5: Búsqueda generalizada de HP (Optuna)
-├── 3_train_model.py             ← Paso 3: Entrenar o desentrenar modelo
-└── 4_metricas.py                ← Paso 4: Evaluar métricas (ratios relativos)
+
+### Paso 2: Entrenar Modelos de Referencia (`3_train_model.py`)
+Entrena el modelo completo (`base`) y el modelo que simula el olvido ideal entrenado desde cero sin el forget set (`naive`).
+```bash
+# Entrenar modelo Base (con retain + forget)
+python 3_train_model.py --model_name base --dataset spiral --model_arch models.base_nn.BaseMLP --train_splits retain,forget --seeds 0,1,2
+
+# Entrenar modelo Naive (solo con retain)
+python 3_train_model.py --model_name naive --dataset spiral --model_arch models.base_nn.BaseMLP --train_splits retain --seeds 0,1,2
+```
+
+### Paso 3: Aplicar Protocolos de Desaprendizaje (`3_train_model.py`)
+Aplica uno de los métodos de desaprendizaje sobre el modelo `base` previamente entrenado.
+```bash
+# Aplicar protocolo CFK
+python 3_train_model.py --model_name cfk --protocol cfk --dataset spiral --model_arch models.base_nn.BaseMLP --train_splits retain --pretrained_weights "models/weights/base_model_seed_{seed}.pth" --hp_file "models/best_cfk_hp.json" --seeds 0,1,2
+```
+
+### Paso 4: Evaluar Métricas (`4_metricas.py`)
+Calcula las precisiones absolutas y ratios relativos (`RR`, `RF`, `RT`, `TR`), así como la métrica de conocimiento residual **Residual Knowledge (RK)** y **RK_micro**.
+```bash
+python 4_metricas.py --unlearned_name cfk --dataset spiral --model_arch models.base_nn.BaseMLP --seeds 0,1,2
+```
+
+### Paso 5: Compilar Tablas Comparativas (`5_generate_tables.py`)
+Compila todos los JSON de resultados guardados en `results/` en una tabla formateada en Markdown para fácil visualización.
+```bash
+python 5_generate_tables.py
 ```
 
 ---
 
-## Pipeline de Ejecución
+## 🎛️ Parámetros de Consola Clave
 
-El pipeline se ejecuta en orden secuencial. Cada paso genera artefactos que son consumidos por los pasos posteriores.
+A continuación se listan los argumentos de consola más importantes de los scripts principales:
 
-```mermaid
-flowchart TD
-    A["1_create_spiral.py"] --> B["2_split_dataset.py"]
-    B --> C["00_hp_search.py"]
-    C --> D["3_train_model.py"]
-    D --> E["4_metricas.py"]
-    
-    A -. "spiral.csv" .-> B
-    B -. "spiral_splits_seed_N.npz" .-> C
-    C -. "best_hp.json / best_cfk_hp.json" .-> D
-    B -. "spiral_splits_seed_N.npz" .-> D
-    D -. "model_seed_N.pth" .-> E
-    B -. "spiral_splits_seed_N.npz" .-> E
-```
+### `run_pipeline.py` (Script de automatización global)
+*   `--dataset`: Nombre del dataset a usar (`spiral`, `cifar_nano`, `cifar10`).
+*   `--model_arch`: Ruta de importación de la arquitectura del modelo (ej: `models.resnet.ResNet18` o `models.base_nn.BaseMLP`).
+*   `--n_trials`: Número de iteraciones de Optuna en la búsqueda de hiperparámetros.
+*   `--seeds`: Semillas a evaluar (por ejemplo: `0,1,2`).
 
----
+### `3_train_model.py` (Entrenamiento y Unlearning)
+*   `--model_name`: Nombre identificativo de salida del modelo (ej: `base`, `naive`, `cfk`, `rurk`).
+*   `--protocol`: Protocolo a aplicar (`standard`, `cfk`, `cfgk`, `euk`, `rurk`).
+*   `--train_splits`: Splits de datos a usar para el entrenamiento (ej: `retain` o `retain,forget`).
+*   `--pretrained_weights`: Ruta a los pesos iniciales (requerido para métodos de desaprendizaje).
+*   `--hp_file`: Archivo JSON con los mejores hiperparámetros cargados para el entrenamiento.
 
-## Paso 1 — Generación del Dataset (`1_create_spiral.py`)
-
-### Propósito
-Genera un dataset sintético de **espirales entrelazadas** en 2D con N clases.
-
-### Parámetros principales
-| Parámetro | Valor por defecto | Descripción |
-|-----------|-------------------|-------------|
-| `n_points_per_class` | 400 | Puntos por espiral |
-| `n_classes` | 3 | Número de espirales/clases |
-| `noise` | 0.45 | Ruido angular (desviación estándar) |
-| `rotations` | 2.5 | Vueltas completas de cada espiral |
-| `random_state` | 42 | Semilla para reproducibilidad |
-
-### Salida
-- `datasets/spiral.csv` — CSV con columnas `x1, x2, label`
-
-### Ejecución
-```bash
-python 1_create_spiral.py
-```
+### `4_metricas.py` (Cálculo de Métricas y RK)
+*   `--unlearned_name`: Nombre del modelo desentrenado que se va a evaluar (ej: `cfk`, `cfgk`, `euk`, `rurk`).
+*   `--rk_tau`: Desviación estándar de las perturbaciones gaussianas (por defecto `0.03`).
+*   `--rk_c`: Número de perturbaciones Monte Carlo por muestra para evaluar RK (por defecto `100`).
+*   `--rk_chunk_size`: Tamaño del bloque para evaluación vectorizada en GPU (por defecto `100`).
 
 ---
 
-## Paso 2 — Partición del Dataset (`2_split_dataset.py`)
+## 🧪 Pruebas Unitarias
 
-### Propósito
-Divide el dataset en **cuatro subconjuntos** para el benchmark de unlearning:
-
-| Split | Descripción | Proporción aprox. |
-|-------|-------------|-------------------|
-| **Retain** | Datos que el modelo debe mantener | ~57% |
-| **Forget** | Datos a olvidar (solo clase 0, cercanos al centro) | ~14% |
-| **Validation** | Evaluación durante entrenamiento | ~8% |
-| **Test** | Evaluación final | ~20% |
-
-### Estrategia de Forget
-El forget set se construye seleccionando las muestras de la **clase 0** más cercanas al **centro de la espiral** (menor radio). Esto simula un escenario realista donde se quiere eliminar un subgrupo coherente y espacialmente localizado de los datos de entrenamiento.
-
-### Salida
-- `datasets/spiral_splits_seed_{N}.npz` — Archivo NumPy comprimido con las 8 arrays: `X_retain, y_retain, X_forget, y_forget, X_val, y_val, X_test, y_test`
-
-### Ejecución
-```bash
-python 2_split_dataset.py
-```
-
----
-
-## Paso 2.5 — Búsqueda Generalizada de Hiperparámetros (`00_hp_search.py`)
-
-### Propósito
-Encuentra la mejor combinación de hiperparámetros para un protocolo específico (ej: entrenamiento estándar o desaprendizaje CFK) utilizando **Optuna** con pruning automático (`MedianPruner`).
-La lógica de los espacios de búsqueda y los tipos de objetivos se centraliza en [hp_spaces.py](file:///c:/Users/smbsa/Documents/UB/benchmark/utils/hp_spaces.py).
-
-### Protocolos Soportados
-1. **`standard`**: Optimiza hiperparámetros de entrenamiento del modelo completo (hidden_dim, lr, batch_size, epochs) minimizando la pérdida de validación (`val_loss`).
-2. **`cfk`**: Optimiza hiperparámetros de desaprendizaje (lr, k) minimizando la discrepancia cuadrática de rendimiento (`unlearning_loss`) relativo al modelo Naive de referencia, con épocas fijas a 20.
-
-### Ejecución
-Para optimizar entrenamiento estándar:
-```bash
-python 00_hp_search.py --protocol standard --n_trials 30
-```
-Para optimizar desaprendizaje CFK:
-```bash
-python 00_hp_search.py --protocol cfk --n_trials 30
-```
-
----
-
-## Paso 3 — Entrenamiento y Desentrenamiento del Modelo (`3_train_model.py`)
-
-### Propósito
-Entrena o desentrena cualquier modelo configurando dinámicamente su arquitectura, protocolo, splits y hiperparámetros.
-
-### Protocolos de Unlearning (Olvido)
-- **`cfk`**: Congela el extractor de características y optimiza únicamente las últimas $K$ capas del clasificador por un número fijo de **20 épocas** sobre el conjunto `retain`.
-
-### Ejecución
-Para entrenar el modelo base:
-```bash
-python 3_train_model.py --model_name base --train_splits retain,forget
-```
-
-Para entrenar el modelo naive (modelo de referencia sin forget set):
-```bash
-python 3_train_model.py --model_name naive --train_splits retain
-```
-
-Para aplicar el protocolo de olvido CFK (20 epochs):
-```bash
-python 3_train_model.py --model_name cfk --protocol cfk --train_splits retain --pretrained_weights "models/weights/base_model_seed_{seed}.pth" --hp_file "models/best_cfk_hp.json"
-```
-
----
-
-## Paso 4 — Evaluación de Métricas de Olvido (`4_metricas.py`)
-
-### Propósito
-Calcula y reporta las precisiones absolutas y los ratios relativos respecto al modelo de referencia **Naive**.
-
-### Ratios Calculados
-Para cada modelo (Base, Naive, Unlearned) se obtienen:
-1. **Retain Ratio (RR)**: Rendimiento relativo sobre el conjunto de retención.
-   $$RR = \frac{\text{Accuracy}(M, D_{retain})}{\text{Accuracy}(M_{naive}, D_{retain})}$$
-   *Valor ideal para el modelo Unlearned: $\sim 1.0$ (retención conservada).*
-
-2. **Forget Ratio (RF)**: Rendimiento relativo sobre el conjunto a olvidar.
-   $$RF = \frac{\text{Accuracy}(M, D_{forget})}{\text{Accuracy}(M_{naive}, D_{forget})}$$
-   *Valor ideal para el modelo Unlearned: $\sim 1.0$ (olvido completado al nivel del modelo Naive).*
-
-3. **Test Ratio (RT)**: Rendimiento relativo sobre el conjunto de test.
-   $$RT = \frac{\text{Accuracy}(M, D_{test})}{\text{Accuracy}(M_{naive}, D_{test})}$$
-   *Valor ideal para el modelo Unlearned: $\sim 1.0$ (generalización intacta).*
-
-### Ejecución
-```bash
-python 4_metricas.py --unlearned_name cfk
-```
-
----
-
-## Tests
-
-El proyecto incluye tests unitarios automatizados ejecutables mediante **pytest**:
+El proyecto incluye tests unitarios automatizados ejecutables mediante **pytest** para asegurar el correcto funcionamiento de las métricas y los algoritmos:
 ```bash
 pytest tests/ -v
 ```
