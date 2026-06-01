@@ -19,6 +19,7 @@ import json
 import inspect
 import importlib
 import time
+import datetime
 from pathlib import Path
 import numpy as np
 import torch
@@ -109,7 +110,8 @@ def train_model(
     hp: dict = None,
     verbose: bool = True,
     pretrained_weights: str = None,
-    dataset: str = "spiral"
+    dataset: str = "spiral",
+    thorough: bool = False
 ) -> nn.Module:
     """
     Entrena un modelo configurable sobre los splits indicados con un protocolo dado.
@@ -236,6 +238,13 @@ def train_model(
     if forget_loader is not None:
         kwargs["forget_loader"] = forget_loader
         
+    thorough_dir = None
+    if thorough:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        thorough_dir = WEIGHTS_DIR / f"{model_name}_model_seed_{seed}_{timestamp}"
+        thorough_dir.mkdir(parents=True, exist_ok=True)
+        kwargs["thorough_dir"] = thorough_dir
+        
     start_time = time.perf_counter()
     model = protocol_fn(
         model=model,
@@ -286,6 +295,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, help="Tamaño de batch (sobrescribe hp_file)")
     parser.add_argument("--lr", type=float, help="Learning rate (sobrescribe hp_file)")
     parser.add_argument("--hidden_dim", type=int, help="Dimensión oculta del modelo (sobrescribe hp_file)")
+    parser.add_argument("--patience", type=int, help="Paciencia para early stopping (sobrescribe hp_file y valor por defecto)")
+    parser.add_argument("--thorough", action="store_true", 
+                        help="Si se activa, guarda los pesos del modelo en cada época en una carpeta con timestamp")
     parser.add_argument("--seeds", type=str, default="0,1,2", 
                         help="Semillas para las cuales entrenar el modelo, separadas por comas (ej. 0,1,2)")
     parser.add_argument("--pretrained_weights", type=str, default=None,
@@ -310,6 +322,7 @@ if __name__ == "__main__":
         "lr": args.lr if args.lr is not None else best_hp.get("lr", 1e-3),
         "hidden_dim": args.hidden_dim if args.hidden_dim is not None else best_hp.get("hidden_dim", 16),
         "k": args.k if args.k is not None else best_hp.get("k", 1),
+        "patience": args.patience if args.patience is not None else best_hp.get("patience", 50),
     }
     
     # Procesar listas
@@ -327,7 +340,8 @@ if __name__ == "__main__":
             hp=hp,
             verbose=args.verbose,
             pretrained_weights=args.pretrained_weights,
-            dataset=args.dataset
+            dataset=args.dataset,
+            thorough=args.thorough
         )
         if args.verbose:
             print("-" * 50)

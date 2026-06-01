@@ -587,6 +587,42 @@ def test_standard_training_early_stopping(fake_dataset):
     assert call_idx == 3, f"Expected validation to run exactly 3 times, but got {call_idx}"
 
 
+def test_train_model_thorough_saving(fake_dataset, weights_dir):
+    """Verifica que si thorough=True se guarda el modelo epoch a epoch en una carpeta timestamped."""
+    hp = {"epochs": 2, "batch_size": 16, "lr": 1e-3, "hidden_dim": 8}
+    
+    # 1. Ejecutar entrenamiento con thorough=True
+    model = train_module.train_model(
+        model_arch="models.base_nn.BaseMLP",
+        protocol="standard",
+        train_splits=["retain"],
+        seed=0,
+        model_name="thorough_test",
+        hp=hp,
+        verbose=False,
+        thorough=True
+    )
+    
+    # 2. Comprobar que existe la carpeta timestamped en weights_dir
+    subdirs = [d for d in weights_dir.iterdir() if d.is_dir()]
+    assert len(subdirs) == 1, "Debe haberse creado exactamente una subcarpeta thorough"
+    
+    thorough_folder = subdirs[0]
+    assert thorough_folder.name.startswith("thorough_test_model_seed_0_")
+    
+    # El final de la carpeta debe contener el timestamp (YYYYMMDD_HHMMSS)
+    assert len(thorough_folder.name) == len("thorough_test_model_seed_0_") + 15
+    
+    # 3. Comprobar que se han guardado los checkpoints de cada época
+    assert (thorough_folder / "epoch_1.pth").exists(), "Debe existir el checkpoint de la epoca 1"
+    assert (thorough_folder / "epoch_2.pth").exists(), "Debe existir el checkpoint de la epoca 2"
+    
+    # 4. Comprobar que el archivo final también se guardó como de costumbre
+    expected_final_weights = weights_dir / "thorough_test_model_seed_0.pth"
+    assert expected_final_weights.exists(), "El modelo final debe guardarse como siempre"
+
+
+
 
 
 

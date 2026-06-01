@@ -17,7 +17,7 @@ class EarlyStopping:
     Early stopping to stop the training when the validation loss does not improve
     after a certain number of epochs.
     """
-    def __init__(self, patience: int = 20, min_delta: float = 0.0, verbose: bool = True):
+    def __init__(self, patience: int = 50, min_delta: float = 0.0, verbose: bool = True):
         self.patience = patience
         self.min_delta = min_delta
         self.verbose = verbose
@@ -71,7 +71,7 @@ def run_standard_training(
         nn.Module: El modelo entrenado.
     """
     hp = kwargs.get("hp", {})
-    patience = hp.get("patience", 20)
+    patience = hp.get("patience", 50)
     min_delta = hp.get("min_delta", 0.0)
 
     early_stopper = None
@@ -120,6 +120,10 @@ def run_standard_training(
             
         if verbose and ((epoch + 1) % 10 == 0 or epoch == epochs - 1):
             print(f"Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+
+        thorough_dir = kwargs.get("thorough_dir", None)
+        if thorough_dir is not None:
+            torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
         if early_stopper is not None:
             early_stopper(val_loss, model, epoch)
@@ -249,6 +253,10 @@ def run_cfk_unlearning(
 
         train_loss = train_loss / total
         train_acc = 100. * correct / total
+
+        thorough_dir = kwargs.get("thorough_dir", None)
+        if thorough_dir is not None:
+            torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
         # Validación
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
@@ -400,6 +408,10 @@ def run_euk_unlearning(
 
         train_loss = train_loss / total
         train_acc = 100. * correct / total
+
+        thorough_dir = kwargs.get("thorough_dir", None)
+        if thorough_dir is not None:
+            torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
         # Validación
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
@@ -643,6 +655,10 @@ def run_cfgk_unlearning(
         train_loss = train_loss / total
         train_acc = 100. * correct / total
 
+        thorough_dir = kwargs.get("thorough_dir", None)
+        if thorough_dir is not None:
+            torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
+
         # Validación
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
             model.eval()
@@ -821,6 +837,10 @@ def run_rurk_gaussian_unlearning(
 
         train_loss = train_loss / total if total > 0 else 0.0
         train_acc = 100. * correct / total if total > 0 else 0.0
+
+        thorough_dir = kwargs.get("thorough_dir", None)
+        if thorough_dir is not None:
+            torch.save(model_copy.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
         if verbose:
             model_copy.eval()

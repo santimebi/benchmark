@@ -124,7 +124,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         optimizer = optim.Adam(model.parameters(), lr=lr)
         
         from utils.protocols import EarlyStopping
-        early_stopper = EarlyStopping(patience=20, verbose=False)
+        early_stopper = EarlyStopping(patience=50, verbose=False)
 
         # Bucle de entrenamiento con reporting de pérdida de validación para pruning
         for epoch in range(epochs):
