@@ -181,7 +181,7 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         X_forget_t = torch.tensor(X_forget, dtype=torch.float32)
         y_forget_t = torch.tensor(y_forget, dtype=torch.long)
         
-        batch_size = suggested_hp.get("batch_size", 128) if protocol == "rurk" else base_batch_size
+        batch_size = suggested_hp.get("batch_size", base_batch_size)
         # Entrenamos fine-tuning usando el batch size especificado
         train_loader = DataLoader(TensorDataset(X_retain_t, y_retain_t), batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(TensorDataset(X_retain_t, y_retain_t), batch_size=batch_size, shuffle=False)

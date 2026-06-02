@@ -316,14 +316,37 @@ if __name__ == "__main__":
     best_hp = load_best_hp(Path(args.hp_file))
     
     # Combinar valores del fichero con los argumentos explícitos de CLI
-    hp = {
-        "epochs": args.epochs if args.epochs is not None else best_hp.get("epochs", 300),
-        "batch_size": args.batch_size if args.batch_size is not None else best_hp.get("batch_size", 32),
-        "lr": args.lr if args.lr is not None else best_hp.get("lr", 1e-3),
-        "hidden_dim": args.hidden_dim if args.hidden_dim is not None else best_hp.get("hidden_dim", 16),
-        "k": args.k if args.k is not None else best_hp.get("k", 1),
-        "patience": args.patience if args.patience is not None else best_hp.get("patience", 50),
-    }
+    hp = best_hp.copy()
+    if args.epochs is not None:
+        hp["epochs"] = args.epochs
+    elif "epochs" not in hp:
+        hp["epochs"] = 300
+
+    if args.batch_size is not None:
+        hp["batch_size"] = args.batch_size
+    elif "batch_size" not in hp:
+        hp["batch_size"] = 32
+
+    if args.lr is not None:
+        hp["lr"] = args.lr
+    elif "lr" not in hp:
+        hp["lr"] = 1e-3
+
+    if args.hidden_dim is not None:
+        hp["hidden_dim"] = args.hidden_dim
+    elif "hidden_dim" not in hp:
+        hp["hidden_dim"] = 16
+
+    if args.k is not None:
+        hp["k"] = args.k
+    elif "k" not in hp:
+        hp["k"] = 1
+
+    if args.patience is not None:
+        hp["patience"] = args.patience
+    elif "patience" not in hp:
+        hp["patience"] = 50
+
     
     # Procesar listas
     splits_list = [s.strip() for s in args.train_splits.split(",")]

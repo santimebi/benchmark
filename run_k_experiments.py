@@ -1,14 +1,29 @@
 import subprocess
 import sys
+import argparse
 from pathlib import Path
+from utils.config import MODELS_PATH
 
 def main():
+    parser = argparse.ArgumentParser(description="Ejecutar experimentos de desaprendizaje para distintos valores de k.")
+    parser.add_argument("--dataset", type=str, default="cifar10",
+                        help="Nombre del dataset a utilizar (ej. cifar10, cifar_nano, spiral)")
+    parser.add_argument("--epochs", type=int, default=20,
+                        help="Número de épocas de ajuste para el desaprendizaje (default: 20)")
+    parser.add_argument("--seeds", type=str, default="0,1,2",
+                        help="Semillas separadas por comas (default: 0,1,2)")
+    parser.add_argument("--model_arch", type=str, default="models.resnet.ResNet18",
+                        help="Arquitectura del modelo (default: models.resnet.ResNet18)")
+    parser.add_argument("--k_values", type=str, default="17,13,9,5",
+                        help="Valores de k separados por comas (default: 17,13,9,5)")
+    args = parser.parse_args()
+
     protocols = ["cfk", "euk", "cfgk"]
-    k_values = [17, 13, 9, 5]
-    epochs = 20
-    seeds = "0,1,2"
-    dataset = "cifar_nano"
-    model_arch = "models.resnet.ResNet18"
+    k_values = [int(k.strip()) for k in args.k_values.split(",")]
+    epochs = args.epochs
+    seeds = args.seeds
+    dataset = args.dataset
+    model_arch = args.model_arch
     
     python_exec = sys.executable
 
@@ -18,9 +33,9 @@ def main():
             print(f"\n========================================================")
             
             # Buscar el archivo de mejores hiperparámetros específico del protocolo
-            hp_file = f"models/best_{protocol}_hp.json"
-            if not Path(hp_file).exists():
-                hp_file = "models/best_hp.json"
+            hp_file = MODELS_PATH / f"best_{protocol}_hp.json"
+            if not hp_file.exists():
+                hp_file = MODELS_PATH / "best_hp.json"
                 
             cmd_train = [
                 python_exec, "3_train_model.py",
@@ -29,8 +44,8 @@ def main():
                 "--train_splits", "retain",
                 "--model_name", model_name,
                 "--dataset", dataset,
-                "--pretrained_weights", "models/weights/base_model_seed_{seed}.pth",
-                "--hp_file", hp_file,
+                "--pretrained_weights", str(MODELS_PATH / "weights/base_model_seed_{seed}.pth"),
+                "--hp_file", str(hp_file),
                 "--epochs", str(epochs),
                 "--k", str(k),
                 "--seeds", seeds
@@ -46,7 +61,7 @@ def main():
                 "--model_arch", model_arch,
                 "--dataset", dataset,
                 "--seeds", seeds,
-                "--hp_file", "models/best_hp.json"
+                "--hp_file", str(MODELS_PATH / "best_hp.json")
             ]
             print(f"EJECUTANDO EVALUACIÓN DE MÉTRICAS: {model_name}")
             print(f"Comando: {' '.join(cmd_metrics)}")

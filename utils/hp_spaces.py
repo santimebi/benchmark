@@ -53,18 +53,19 @@ HP_SPACES: Dict[str, Dict[str, Any]] = {
     "rurk": {
         "suggest_fn": lambda trial, model_arch="": {
             "lr": trial.suggest_categorical("lr", [0.01]),
-            "momentum": 0.90,
-            "weight_decay": 5e-4,
-            "tau": 0.03,
-            "lambda_f": 0.03,
-            "lambda_a": 0.00045,
-            "epochs": 2,
-            "max_total_iterations": 200,
-            "gradient_clip_norm": 1.0,
-            "v": 1,
-            "batch_size": 128
+            "momentum": trial.suggest_categorical("momentum", [0.90]),
+            "weight_decay": trial.suggest_categorical("weight_decay", [5e-4]),
+            "tau": trial.suggest_categorical("tau", [0.03]),
+            "lambda_f": trial.suggest_categorical("lambda_f", [0.03]),
+            "lambda_a": trial.suggest_categorical("lambda_a", [0.00045]),
+            "epochs": trial.suggest_categorical("epochs", [2]),
+            "max_total_iterations": trial.suggest_categorical("max_total_iterations", [200]),
+            "gradient_clip_norm": trial.suggest_categorical("gradient_clip_norm", [1.0]),
+            "v": trial.suggest_categorical("v", [1]),
+            "batch_size": trial.suggest_categorical("batch_size", [128])
         },
         "objective_type": "unlearning_loss",
         "output_path": MODELS_PATH / "best_rurk_hp.json",
     }
 }
+
