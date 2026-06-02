@@ -308,6 +308,19 @@ if __name__ == "__main__":
                         help="Nombre o prefijo del dataset a cargar (ej. spiral, cifar10)")
     parser.add_argument("--no_verbose", dest="verbose", action="store_false", 
                         help="Desactiva los mensajes y logs de progreso")
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="Modo de ejecución de Weights & Biases (online, offline, disabled)."
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="machine-unlearning-benchmark",
+        help="Proyecto de Weights & Biases donde registrar los experimentos."
+    )
     parser.set_defaults(verbose=True)
     
     args = parser.parse_args()
@@ -352,19 +365,43 @@ if __name__ == "__main__":
     splits_list = [s.strip() for s in args.train_splits.split(",")]
     seeds_list = [int(s.strip()) for s in args.seeds.split(",")]
     
+    from utils.wandb_helper import init_wandb
+    
     # Entrenar para cada semilla
     for seed in seeds_list:
-        train_model(
-            model_arch=args.model_arch,
-            protocol=args.protocol,
-            train_splits=splits_list,
-            seed=seed,
-            model_name=args.model_name,
-            hp=hp,
-            verbose=args.verbose,
-            pretrained_weights=args.pretrained_weights,
-            dataset=args.dataset,
-            thorough=args.thorough
+        run = init_wandb(
+            mode=args.wandb_mode,
+            project=args.wandb_project,
+            name=f"{args.model_name}_seed_{seed}",
+            group=args.model_name,
+            job_type="train",
+            config={
+                "model_arch": args.model_arch,
+                "protocol": args.protocol,
+                "train_splits": splits_list,
+                "seed": seed,
+                "model_name": args.model_name,
+                "dataset": args.dataset,
+                "thorough": args.thorough,
+                **hp
+            }
         )
+        try:
+            train_model(
+                model_arch=args.model_arch,
+                protocol=args.protocol,
+                train_splits=splits_list,
+                seed=seed,
+                model_name=args.model_name,
+                hp=hp,
+                verbose=args.verbose,
+                pretrained_weights=args.pretrained_weights,
+                dataset=args.dataset,
+                thorough=args.thorough
+            )
+        finally:
+            if run is not None:
+                run.finish()
         if args.verbose:
             print("-" * 50)
+

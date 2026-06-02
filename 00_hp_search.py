@@ -24,6 +24,8 @@ import optuna
 from utils.config import DATASETS_PATH, MODELS_PATH
 from utils.hp_spaces import HP_SPACES
 from utils.protocols import get_protocol
+from utils.wandb_helper import init_wandb, log_wandb
+
 
 WEIGHTS_DIR = MODELS_PATH / "weights"
 
@@ -52,7 +54,7 @@ def load_best_hp(hp_file_path: Path) -> dict:
         return json.load(f)
 
 
-def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, dataset: str = "spiral") -> float:
+def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, dataset: str = "spiral", wandb_mode: str = "disabled", wandb_project: str = "machine-unlearning-benchmark") -> float:
     """
     Función objetivo a minimizar por Optuna.
     """
@@ -61,7 +63,35 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         
     hp_config = HP_SPACES[protocol]
     suggested_hp = hp_config["suggest_fn"](trial, model_arch=model_arch)
+    
+    from utils.wandb_helper import init_wandb
+    run = init_wandb(
+        mode=wandb_mode,
+        project=wandb_project,
+        name=f"hp_search_{protocol}_trial_{trial.number}",
+        group=f"hp_search_{protocol}",
+        job_type="trial",
+        config={
+            "trial_number": trial.number,
+            "protocol": protocol,
+            "seed": seed,
+            "model_arch": model_arch,
+            "dataset": dataset,
+            **suggested_hp
+        }
+    )
+    try:
+        val = _objective_impl(trial, protocol, seed, model_arch, dataset, suggested_hp)
+        return val
+    finally:
+        if run is not None:
+            run.finish()
+
+
+def _objective_impl(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, dataset: str, suggested_hp: dict) -> float:
+    hp_config = HP_SPACES[protocol]
     objective_type = hp_config["objective_type"]
+
     
     if objective_type == "val_loss":
         # ──────────────────────────────────────────────
@@ -145,6 +175,9 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
                     outputs = model(inputs)
                     val_loss += criterion(outputs, targets).item() * len(targets)
             val_loss /= len(X_val)
+            
+            from utils.wandb_helper import log_wandb
+            log_wandb({"epoch": epoch + 1, "val_loss": val_loss})
             
             trial.report(val_loss, epoch)
             if trial.should_prune():
@@ -294,13 +327,21 @@ def objective(trial: optuna.Trial, protocol: str, seed: int, model_arch: str, da
         forget_excess = unlearned_forget_acc - naive_forget_acc
         
         loss = (retain_diff ** 2) + max(0.0, forget_excess) ** 2
+        from utils.wandb_helper import log_wandb
+        log_wandb({
+            "unlearned_retain_acc": unlearned_retain_acc,
+            "unlearned_forget_acc": unlearned_forget_acc,
+            "retain_diff": retain_diff,
+            "forget_excess": forget_excess,
+            "loss": loss
+        })
         return loss
 
     else:
         raise ValueError(f"Tipo de objetivo '{objective_type}' no soportado.")
 
 
-def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset: str = "spiral"):
+def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset: str = "spiral", wandb_mode: str = "disabled", wandb_project: str = "machine-unlearning-benchmark"):
     """
     Crea el estudio Optuna, ejecuta la optimización y guarda los resultados en JSON.
     """
@@ -323,7 +364,7 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset
     )
     
     study.optimize(
-        lambda trial: objective(trial, protocol, seed, model_arch, dataset),
+        lambda trial: objective(trial, protocol, seed, model_arch, dataset, wandb_mode, wandb_project),
         n_trials=n_trials,
         show_progress_bar=True
     )
@@ -355,6 +396,29 @@ def run_search(protocol: str, n_trials: int, seed: int, model_arch: str, dataset
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(suggested_params, f, indent=2, ensure_ascii=False)
     print(f"Hiperparámetros guardados exitosamente en: {output_path}\n")
+
+    # Iniciar run de resumen de wandb
+    study_run = init_wandb(
+        mode=wandb_mode,
+        project=wandb_project,
+        name=f"hp_search_{protocol}_summary",
+        group=f"hp_search_{protocol}",
+        job_type="summary",
+        config={
+            "protocol": protocol,
+            "n_trials": n_trials,
+            "seed": seed,
+            "model_arch": model_arch,
+            "dataset": dataset,
+        }
+    )
+    if study_run is not None:
+        log_wandb({
+            "best_value": best.value,
+            **{f"best_param_{k}": v for k, v in suggested_params.items()}
+        })
+        study_run.finish()
+
 
 
 if __name__ == "__main__":
@@ -390,6 +454,19 @@ if __name__ == "__main__":
         default="spiral",
         help="Nombre o prefijo del dataset (default: spiral)."
     )
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="Modo de ejecución de Weights & Biases (online, offline, disabled)."
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="machine-unlearning-benchmark",
+        help="Proyecto de Weights & Biases donde registrar los experimentos."
+    )
     args = parser.parse_args()
     
     run_search(
@@ -397,5 +474,7 @@ if __name__ == "__main__":
         n_trials=args.n_trials,
         seed=args.seed,
         model_arch=args.model_arch,
-        dataset=args.dataset
+        dataset=args.dataset,
+        wandb_mode=args.wandb_mode,
+        wandb_project=args.wandb_project
     )

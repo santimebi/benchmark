@@ -85,7 +85,9 @@ def calculate_metrics(
     dataset: str = "spiral",
     rk_tau: float = 0.03,
     rk_c: int = 100,
-    rk_chunk_size: int = 100
+    rk_chunk_size: int = 100,
+    wandb_mode: str = "disabled",
+    wandb_project: str = "machine-unlearning-benchmark"
 ) -> dict:
     """
     Calcula y reporta la precisión absoluta y los ratios relacionales (RR, RF, RT, TR) por semilla,
@@ -411,7 +413,33 @@ def calculate_metrics(
             }
         }
 
-
+        # Log per-seed metrics to wandb
+        from utils.wandb_helper import init_wandb, log_wandb
+        run = init_wandb(
+            mode=wandb_mode,
+            project=wandb_project,
+            name=f"eval_{unlearned_name}_seed_{seed}",
+            group=f"eval_{unlearned_name}",
+            job_type="eval",
+            config={
+                "unlearned_name": unlearned_name,
+                "model_arch": model_arch,
+                "seed": seed,
+                "dataset": dataset,
+                "rk_tau": rk_tau,
+                "rk_c": rk_c,
+            }
+        )
+        if run is not None:
+            metrics_to_log = {}
+            for model_key in ["unlearned", "base", "naive"]:
+                model_data = results["per_seed"][str(seed)][model_key]
+                for k, v in model_data.items():
+                    # Evitar registrar listas o diccionarios complejos directamente en wandb
+                    if isinstance(v, (int, float, bool)) or v is None:
+                        metrics_to_log[f"{model_key}/{k}"] = v
+            log_wandb(metrics_to_log)
+            run.finish()
         
         # Almacenar en listas agregadas
         for k_met in metrics_list.keys():
@@ -517,6 +545,29 @@ def calculate_metrics(
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(cleaned_results, f, indent=4, ensure_ascii=False)
     print(f"Métricas guardadas exitosamente en: {out_file}\n")
+
+    # Registrar resumen agregado en wandb
+    from utils.wandb_helper import init_wandb, log_wandb
+    run_agg = init_wandb(
+        mode=wandb_mode,
+        project=wandb_project,
+        name=f"eval_{unlearned_name}_aggregated",
+        group=f"eval_{unlearned_name}",
+        job_type="eval_aggregated",
+        config={
+            "unlearned_name": unlearned_name,
+            "model_arch": model_arch,
+            "dataset": dataset,
+            "seeds": seeds,
+        }
+    )
+    if run_agg is not None:
+        metrics_to_log = {}
+        for k_met, aggr in results["aggregated"].items():
+            metrics_to_log[f"aggregated/{k_met}_mean"] = aggr["mean"]
+            metrics_to_log[f"aggregated/{k_met}_std"] = aggr["std"]
+        log_wandb(metrics_to_log)
+        run_agg.finish()
     
     return results
 
@@ -550,6 +601,19 @@ if __name__ == "__main__":
                         help="Número de perturbaciones Monte Carlo para Residual Knowledge (default: 100)")
     parser.add_argument("--rk_chunk_size", type=int, default=100,
                         help="Tamaño de lote para evaluaciones vectorizadas de RK (default: 100)")
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="Modo de ejecución de Weights & Biases (online, offline, disabled)."
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="machine-unlearning-benchmark",
+        help="Proyecto de Weights & Biases donde registrar los experimentos."
+    )
                         
     args = parser.parse_args()
     
@@ -574,5 +638,7 @@ if __name__ == "__main__":
         dataset=args.dataset,
         rk_tau=args.rk_tau,
         rk_c=args.rk_c,
-        rk_chunk_size=args.rk_chunk_size
+        rk_chunk_size=args.rk_chunk_size,
+        wandb_mode=args.wandb_mode,
+        wandb_project=args.wandb_project
     )

@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from utils.wandb_helper import log_wandb
+
 
 
 class EarlyStopping:
@@ -118,6 +120,14 @@ def run_standard_training(
         val_loss = val_loss / val_total if val_total > 0 else 0.0
         val_acc = 100. * val_correct / val_total if val_total > 0 else 0.0
             
+        log_wandb({
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss,
+            "val_acc": val_acc,
+        })
+
         if verbose and ((epoch + 1) % 10 == 0 or epoch == epochs - 1):
             print(f"Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
 
@@ -258,7 +268,8 @@ def run_cfk_unlearning(
         if thorough_dir is not None:
             torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
-        # Validación
+        val_loss = None
+        val_acc = None
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
             model.eval()
             val_loss = 0.0
@@ -279,6 +290,17 @@ def run_cfk_unlearning(
 
             if verbose:
                 print(f"Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+
+        metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+        }
+        if val_loss is not None:
+            metrics["val_loss"] = val_loss
+            metrics["val_acc"] = val_acc
+        log_wandb(metrics)
+
 
     return model
 
@@ -413,7 +435,8 @@ def run_euk_unlearning(
         if thorough_dir is not None:
             torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
-        # Validación
+        val_loss = None
+        val_acc = None
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
             model.eval()
             val_loss = 0.0
@@ -434,6 +457,17 @@ def run_euk_unlearning(
 
             if verbose:
                 print(f"Epoch [{epoch+1}/{epochs}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+
+        metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+        }
+        if val_loss is not None:
+            metrics["val_loss"] = val_loss
+            metrics["val_acc"] = val_acc
+        log_wandb(metrics)
+
 
     return model
 
@@ -659,7 +693,8 @@ def run_cfgk_unlearning(
         if thorough_dir is not None:
             torch.save(model.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
-        # Validación
+        val_loss = None
+        val_acc = None
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
             model.eval()
             val_loss = 0.0
@@ -669,7 +704,6 @@ def run_cfgk_unlearning(
                 for val_inputs, val_targets in val_loader:
                     val_inputs, val_targets = val_inputs.to(device), val_targets.to(device)
                     val_outputs = model(val_inputs)
-                    # En validación usamos CrossEntropy pura
                     v_loss = criterion(val_outputs, val_targets)
                     val_loss += v_loss.item() * val_inputs.size(0)
                     _, val_predicted = val_outputs.max(1)
@@ -681,6 +715,17 @@ def run_cfgk_unlearning(
 
             if verbose:
                 print(f"Epoch [{epoch+1}/{epochs}] | Train CFGK Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+
+        metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+        }
+        if val_loss is not None:
+            metrics["val_loss"] = val_loss
+            metrics["val_acc"] = val_acc
+        log_wandb(metrics)
+
 
     if logs_dict is not None and first_batch_logs is not None and last_batch_logs is not None:
         logs_dict["c"] = c
@@ -842,6 +887,8 @@ def run_rurk_gaussian_unlearning(
         if thorough_dir is not None:
             torch.save(model_copy.state_dict(), thorough_dir / f"epoch_{epoch+1}.pth")
 
+        val_loss = None
+        val_acc = None
         if verbose:
             model_copy.eval()
             val_loss = 0.0
@@ -862,6 +909,17 @@ def run_rurk_gaussian_unlearning(
 
             print(f"Epoch [{epoch+1}/{epochs}] | RURK-Gaussian Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
             model_copy.train()
+
+        metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+        }
+        if val_loss is not None:
+            metrics["val_loss"] = val_loss
+            metrics["val_acc"] = val_acc
+        log_wandb(metrics)
+
 
     return model_copy
 

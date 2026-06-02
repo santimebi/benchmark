@@ -6,23 +6,6 @@ from pathlib import Path
 from utils.config import MODELS_PATH
 
 
-def run_command(cmd, desc):
-    print(f"\n========================================================")
-    print(f" EJECUTANDO: {desc}")
-    print(f" Comando: {' '.join(cmd)}")
-    print(f"========================================================\n")
-    
-    start_time = time.perf_counter()
-    result = subprocess.run(cmd, capture_output=False, text=True)
-    elapsed = time.perf_counter() - start_time
-    
-    if result.returncode != 0:
-        print(f"\n[ERROR] El comando falló con código {result.returncode} tras {elapsed:.2f}s.")
-        sys.exit(result.returncode)
-        
-    print(f"\n[ÉXITO] Completado en {elapsed:.2f}s.\n")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Script de automatización para ejecutar todo el pipeline del benchmark.")
     parser.add_argument("--dataset", type=str, default="cifar_nano",
@@ -39,9 +22,43 @@ def main():
                         help="Número de perturbaciones Monte Carlo para Residual Knowledge (default: 100)")
     parser.add_argument("--rk_chunk_size", type=int, default=100,
                         help="Tamaño de lote para evaluaciones vectorizadas de RK (default: 100)")
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="Modo de ejecución de Weights & Biases (online, offline, disabled)."
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="machine-unlearning-benchmark",
+        help="Proyecto de Weights & Biases donde registrar los experimentos."
+    )
     args = parser.parse_args()
 
+    def run_command(cmd, desc):
+        # Propagar flags de wandb si corresponde al script secundario
+        if len(cmd) > 1 and cmd[1] in ["00_hp_search.py", "3_train_model.py", "4_metricas.py"]:
+            cmd = cmd + ["--wandb_mode", args.wandb_mode, "--wandb_project", args.wandb_project]
+
+        print(f"\n========================================================")
+        print(f" EJECUTANDO: {desc}")
+        print(f" Comando: {' '.join(cmd)}")
+        print(f"========================================================\n")
+        
+        start_time = time.perf_counter()
+        result = subprocess.run(cmd, capture_output=False, text=True)
+        elapsed = time.perf_counter() - start_time
+        
+        if result.returncode != 0:
+            print(f"\n[ERROR] El comando falló con código {result.returncode} tras {elapsed:.2f}s.")
+            sys.exit(result.returncode)
+            
+        print(f"\n[ÉXITO] Completado en {elapsed:.2f}s.\n")
+
     print(f"Iniciando pipeline completo del Benchmark con {args.dataset} y {args.model_arch}...\n")
+
     
     # Directorio base
     cwd = str(Path(__file__).parent.resolve())
