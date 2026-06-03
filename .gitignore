@@ -10,3 +10,7 @@ data/
 
 # Hyperparameters generated during pipeline
 models/best_*.json
+
+# Local output and log files
+out.txt
+run_k_experiments.log
