@@ -16,6 +16,19 @@ def main():
                         help="Arquitectura del modelo (default: models.resnet.ResNet18)")
     parser.add_argument("--k_values", type=str, default="17,13,9,5",
                         help="Valores de k separados por comas (default: 17,13,9,5)")
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="Modo de ejecución de Weights & Biases (online, offline, disabled)."
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="machine-unlearning-benchmark",
+        help="Proyecto de Weights & Biases donde registrar los experimentos."
+    )
     args = parser.parse_args()
 
     protocols = ["cfk", "euk", "cfgk"]
@@ -48,7 +61,9 @@ def main():
                 "--hp_file", str(hp_file),
                 "--epochs", str(epochs),
                 "--k", str(k),
-                "--seeds", seeds
+                "--seeds", seeds,
+                "--wandb_mode", args.wandb_mode,
+                "--wandb_project", args.wandb_project
             ]
             print(f"EJECUTANDO ENTRENAMIENTO: {protocol} con k={k}")
             print(f"Comando: {' '.join(cmd_train)}")
@@ -61,7 +76,9 @@ def main():
                 "--model_arch", model_arch,
                 "--dataset", dataset,
                 "--seeds", seeds,
-                "--hp_file", str(MODELS_PATH / "best_hp.json")
+                "--hp_file", str(MODELS_PATH / "best_hp.json"),
+                "--wandb_mode", "disabled",
+                "--wandb_project", args.wandb_project
             ]
             print(f"EJECUTANDO EVALUACIÓN DE MÉTRICAS: {model_name}")
             print(f"Comando: {' '.join(cmd_metrics)}")

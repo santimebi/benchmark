@@ -19,7 +19,7 @@ class EarlyStopping:
     Early stopping to stop the training when the validation loss does not improve
     after a certain number of epochs.
     """
-    def __init__(self, patience: int = 50, min_delta: float = 0.0, verbose: bool = True):
+    def __init__(self, patience: int = 20, min_delta: float = 0.0, verbose: bool = True):
         self.patience = patience
         self.min_delta = min_delta
         self.verbose = verbose
@@ -73,7 +73,7 @@ def run_standard_training(
         nn.Module: El modelo entrenado.
     """
     hp = kwargs.get("hp", {})
-    patience = hp.get("patience", 50)
+    patience = hp.get("patience", 20)
     min_delta = hp.get("min_delta", 0.0)
 
     early_stopper = None

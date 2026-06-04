@@ -358,7 +358,7 @@ if __name__ == "__main__":
     if args.patience is not None:
         hp["patience"] = args.patience
     elif "patience" not in hp:
-        hp["patience"] = 50
+        hp["patience"] = 20
 
     
     # Procesar listas

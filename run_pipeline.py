@@ -39,7 +39,7 @@ def main():
 
     def run_command(cmd, desc):
         # Propagar flags de wandb si corresponde al script secundario
-        if len(cmd) > 1 and cmd[1] in ["00_hp_search.py", "3_train_model.py", "4_metricas.py"]:
+        if len(cmd) > 1 and cmd[1] in ["3_train_model.py"]:
             cmd = cmd + ["--wandb_mode", args.wandb_mode, "--wandb_project", args.wandb_project]
 
         print(f"\n========================================================")
@@ -76,14 +76,14 @@ def main():
     # 2. Entrenamiento del modelo base (con retain + forget) para las semillas
     run_command(
         [py, "3_train_model.py", "--model_arch", args.model_arch, "--protocol", "standard",
-         "--train_splits", "retain,forget", "--model_name", "base", "--dataset", args.dataset, "--seeds", args.seeds],
+         "--train_splits", "retain,forget", "--model_name", "base", "--dataset", args.dataset, "--seeds", args.seeds, "--patience", "20"],
         "Paso 2: Entrenamiento del modelo Base (Retain + Forget)"
     )
 
     # 3. Entrenamiento del modelo naive (solo retain) para las semillas
     run_command(
         [py, "3_train_model.py", "--model_arch", args.model_arch, "--protocol", "standard",
-         "--train_splits", "retain", "--model_name", "naive", "--dataset", args.dataset, "--seeds", args.seeds],
+         "--train_splits", "retain", "--model_name", "naive", "--dataset", args.dataset, "--seeds", args.seeds, "--patience", "20"],
         "Paso 3: Entrenamiento del modelo Naive (solo Retain)"
     )
 
