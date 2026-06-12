@@ -245,6 +245,61 @@ def train_model(
         thorough_dir.mkdir(parents=True, exist_ok=True)
         kwargs["thorough_dir"] = thorough_dir
         
+    # Evaluar y registrar época 0 para protocolos de desaprendizaje (unlearning)
+    if protocol != "standard":
+        from utils.wandb_helper import log_wandb
+        was_training = model.training
+        model.eval()
+        
+        # Evaluar en train_loader (retain split)
+        t_loss = 0.0
+        t_correct = 0
+        t_total = 0
+        with torch.no_grad():
+            for inputs, targets in train_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                t_loss += loss.item() * inputs.size(0)
+                _, predicted = outputs.max(1)
+                t_total += targets.size(0)
+                t_correct += predicted.eq(targets).sum().item()
+        t_loss = t_loss / t_total if t_total > 0 else 0.0
+        t_acc = 100. * t_correct / t_total if t_total > 0 else 0.0
+        
+        # Evaluar en val_loader
+        v_loss = 0.0
+        v_correct = 0
+        v_total = 0
+        with torch.no_grad():
+            for inputs, targets in val_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                v_loss += loss.item() * inputs.size(0)
+                _, predicted = outputs.max(1)
+                v_total += targets.size(0)
+                v_correct += predicted.eq(targets).sum().item()
+        v_loss = v_loss / v_total if v_total > 0 else 0.0
+        v_acc = 100. * v_correct / v_total if v_total > 0 else 0.0
+        
+        log_wandb({
+            "epoch": 0,
+            "train_loss": t_loss,
+            "train_acc": t_acc,
+            "val_loss": v_loss,
+            "val_acc": v_acc,
+        })
+        
+        if verbose:
+            print(f"Epoch [0/{epochs}] | Train Loss: {t_loss:.4f} | Train Acc: {t_acc:.2f}% | Val Loss: {v_loss:.4f} | Val Acc: {v_acc:.2f}%")
+            
+        if thorough_dir is not None:
+            torch.save(model.state_dict(), thorough_dir / "epoch_0.pth")
+            
+        if was_training:
+            model.train()
+
     start_time = time.perf_counter()
     model = protocol_fn(
         model=model,
